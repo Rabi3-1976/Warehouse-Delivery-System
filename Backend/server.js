@@ -51,17 +51,46 @@ function verifyToken(req, res, next) {
     });
 }
 
-// Login
+// Login endpoint - should be in server.js
 app.post("/login", async (req, res) => {
     const { username, password } = req.body;
+    console.log('🔐 Login attempt for:', username); // Add this for debugging
+
     try {
-        const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+        const result = await pool.query(
+            "SELECT * FROM users WHERE username = $1",
+            [username]
+        );
+
+        console.log('📊 Query result:', result.rows.length > 0 ? 'User found' : 'User not found');
+
         const user = result.rows[0];
-        if (!user) return res.status(400).json({ error: "Invalid credentials" });
+
+        if (!user) {
+            console.log('❌ User not found:', username);
+            return res.status(400).json({ error: "Invalid credentials" });
+        }
+
         const valid = await bcrypt.compare(password, user.password);
-        if (!valid) return res.status(400).json({ error: "Invalid credentials" });
+        console.log('🔑 Password valid:', valid);
+
+        if (!valid) {
+            console.log('❌ Invalid password for:', username);
+            return res.status(400).json({ error: "Invalid credentials" });
+        }
+
         const token = jwt.sign({ id: user.id, role: user.role }, SECRET);
-        res.json({ token, role: user.role, user: { id: user.id, username: user.username, full_name: user.full_name } });
+        console.log('✅ Login successful for:', username);
+
+        res.json({
+            token,
+            role: user.role,
+            user: {
+                id: user.id,
+                username: user.username,
+                full_name: user.full_name
+            }
+        });
     } catch (err) {
         console.error("LOGIN ERROR:", err);
         res.status(500).json({ error: "Login failed" });
