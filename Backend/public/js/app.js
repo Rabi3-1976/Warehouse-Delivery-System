@@ -31,37 +31,60 @@ async function apiRequest(endpoint, method = 'GET', data = null) {
     }
 }
 
-// Login
+// app.js - Fixed Login
+let token = null;
+let currentUser = null;
+
 async function login(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value;
     const password = document.getElementById('loginPassword').value;
 
+    console.log('🔐 Attempting login for:', username);
+
     try {
         const response = await fetch('/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify({ username, password })
         });
+
+        console.log('📡 Response status:', response.status);
+
         const result = await response.json();
+        console.log('📦 Response data:', result);
 
         if (!response.ok) {
             throw new Error(result.error || 'Login failed');
         }
 
+        if (!result.token) {
+            throw new Error('No token received');
+        }
+
         token = result.token;
         currentUser = result.user;
+
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(currentUser));
 
         document.getElementById('loginPage').style.display = 'none';
         document.getElementById('app').style.display = 'block';
         document.getElementById('userDisplay').textContent = currentUser?.full_name || currentUser?.username || 'User';
+
+        console.log('✅ Login successful!');
         showPage('dashboard');
+
     } catch (error) {
+        console.error('❌ Login error:', error);
         document.getElementById('loginError').textContent = error.message;
     }
 }
+
+// Make sure this function is available globally
+window.login = login;
 
 // Logout
 function logout() {
@@ -231,10 +254,13 @@ function checkSession() {
     return false;
 }
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    if (!checkSession()) {
-        document.getElementById('loginPage').style.display = 'flex';
-        document.getElementById('app').style.display = 'none';
+// Add this at the bottom of app.js
+document.addEventListener('DOMContentLoaded', function() {
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', login);
     }
+    
+    // Check session
+    checkSession();
 });
