@@ -177,6 +177,28 @@ app.get('/health', (req, res) => {
     res.json({ status: 'OK', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
+// Add these endpoints if they don't exist
+
+// Get all suppliers
+app.get('/api/suppliers', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM suppliers ORDER BY name');
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get all products (for dropdown)
+app.get('/api/products', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, name, sku FROM products ORDER BY name');
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // =====================================================
 // 404 HANDLER
 // =====================================================
