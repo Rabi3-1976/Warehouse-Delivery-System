@@ -1,15 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warehouse & Delivery Management System</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Warehouse & Delivery System</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 </head>
 <body>
-    <div id="app">
-        <!-- Sidebar -->
+
+    <!-- LOGIN PAGE -->
+    <div id="loginPage">
+        <div class="login-container">
+            <h1>🏗️ W&D System</h1>
+            <p>Warehouse & Delivery Management</p>
+            <form onsubmit="login(event)">
+                <input type="text" id="loginUsername" placeholder="Username" required />
+                <input type="password" id="loginPassword" placeholder="Password" required />
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+            <div id="loginError" style="color:red;margin-top:10px;"></div>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="app" style="display:none;">
         <nav id="sidebar">
             <div class="sidebar-header">
                 <h2>🏗️ W&D System</h2>
@@ -26,31 +41,29 @@
             </ul>
         </nav>
 
-        <!-- Main Content -->
         <main id="main-content">
             <header class="header">
                 <div class="header-title">
                     <h1 id="page-title">Dashboard</h1>
                 </div>
                 <div class="header-actions">
+                    <span id="userDisplay" style="margin-right:15px;"></span>
                     <button onclick="logout()" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</button>
                 </div>
             </header>
-
             <div id="page-content">
-                <!-- Pages will be loaded here -->
+                <div class="loading">Loading...</div>
             </div>
         </main>
     </div>
 
-    <!-- Scripts -->
-    <script src="js/app.js"></script>
-    <script src="js/dashboard.js"></script>
-    <script src="js/inbound.js"></script>
-    <script src="js/outbound.js"></script>
-    <script src="js/inventory.js"></script>
-    <script src="js/delivery.js"></script>
-    <script src="js/warehouse.js"></script>
-    <script src="js/reports.js"></script>
+    <script src="/js/app.js"></script>
+    <script src="/js/dashboard.js"></script>
+    <script src="/js/inbound.js"></script>
+    <script src="/js/outbound.js"></script>
+    <script src="/js/inventory.js"></script>
+    <script src="/js/delivery.js"></script>
+    <script src="/js/warehouse.js"></script>
+    <script src="/js/reports.js"></script>
 </body>
 </html>
