@@ -2,11 +2,11 @@
 const pool = require('../database');
 const fs = require('fs');
 const path = require('path');
-const { seedDatabase } = require('./seed');
+const bcrypt = require('bcryptjs');
 
 async function runMigrations() {
     console.log('📦 Running database migrations...');
-    
+
     // Create schema_migrations table
     await pool.query(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -23,6 +23,7 @@ async function runMigrations() {
     if (!fs.existsSync(migrationsPath)) {
         fs.mkdirSync(migrationsPath, { recursive: true });
     }
+
     const files = fs.readdirSync(migrationsPath).filter(f => f.endsWith('.js')).sort();
 
     for (const file of files) {
@@ -33,7 +34,7 @@ async function runMigrations() {
 
         console.log(`🔄 Applying migration ${file}...`);
         const migration = require(path.join(migrationsPath, file));
-        
+
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
@@ -54,6 +55,31 @@ async function runMigrations() {
     }
 
     console.log('✅ All migrations completed');
+}
+
+async function seedDatabase() {
+    console.log('🌱 Seeding database...');
+
+    try {
+        // Check if admin user exists
+        const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
+
+        if (adminCheck.rowCount === 0) {
+            const hashed = bcrypt.hashSync('admin123', 10);
+            await pool.query(`
+                INSERT INTO users (username, password, role, full_name, created_at)
+                VALUES ($1, $2, $3, $4, NOW())
+            `, ['admin', hashed, 'admin', 'System Administrator']);
+            console.log('✅ Admin user created (username: admin, password: admin123)');
+        } else {
+            console.log('ℹ️ Admin user already exists');
+        }
+
+        console.log('✅ Seeding completed');
+    } catch (error) {
+        console.error('❌ Seeding failed:', error);
+        throw error;
+    }
 }
 
 async function setupDatabase() {
