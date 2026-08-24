@@ -51,35 +51,53 @@ function verifyToken(req, res, next) {
     });
 }
 
-// Login endpoint - should be in server.js
+// =====================================================
+// AUTH ENDPOINTS
+// =====================================================
+
 app.post("/login", async (req, res) => {
     const { username, password } = req.body;
-    console.log('🔐 Login attempt for:', username); // Add this for debugging
+    console.log('🔐 Login attempt for:', username);
 
     try {
+        // Check if users table exists
+        const tableCheck = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'users'
+            )
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.error('❌ Users table does not exist!');
+            return res.status(500).json({ error: 'Database not initialized' });
+        }
+
         const result = await pool.query(
             "SELECT * FROM users WHERE username = $1",
             [username]
         );
 
-        console.log('📊 Query result:', result.rows.length > 0 ? 'User found' : 'User not found');
+        console.log('📊 User found:', result.rows.length > 0);
 
-        const user = result.rows[0];
-
-        if (!user) {
-            console.log('❌ User not found:', username);
-            return res.status(400).json({ error: "Invalid credentials" });
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: "Invalid username or password" });
         }
 
+        const user = result.rows[0];
         const valid = await bcrypt.compare(password, user.password);
         console.log('🔑 Password valid:', valid);
 
         if (!valid) {
-            console.log('❌ Invalid password for:', username);
-            return res.status(400).json({ error: "Invalid credentials" });
+            return res.status(400).json({ error: "Invalid username or password" });
         }
 
-        const token = jwt.sign({ id: user.id, role: user.role }, SECRET);
+        const token = jwt.sign(
+            { id: user.id, role: user.role, username: user.username },
+            SECRET,
+            { expiresIn: '24h' }
+        );
+
         console.log('✅ Login successful for:', username);
 
         res.json({
@@ -93,7 +111,11 @@ app.post("/login", async (req, res) => {
         });
     } catch (err) {
         console.error("LOGIN ERROR:", err);
-        res.status(500).json({ error: "Login failed" });
+        res.status(500).json({ 
+            error: "Login failed", 
+            details: err.message,
+            stack: err.stack 
+        });
     }
 });
 
