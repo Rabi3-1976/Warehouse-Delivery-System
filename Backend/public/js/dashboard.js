@@ -1,6 +1,8 @@
 // dashboard.js - FIXED
 
 async function loadDashboard(container) {
+    console.log('📊 loadDashboard called');
+    
     container.innerHTML = `
         <div class="stats-grid" id="dashboardStats">
             <div class="stat-card"><div class="icon">📦</div><div class="value" id="statProducts">...</div><div class="label">Total Products</div></div>
@@ -38,7 +40,6 @@ async function loadDashboardStats() {
         document.getElementById('statDeliveries').textContent = stats.pending_deliveries || 0;
         document.getElementById('statLowStock').textContent = stats.low_stock_items || 0;
         
-        // FIX: Ensure inventory_value is a number
         const invValue = parseFloat(stats.inventory_value) || 0;
         document.getElementById('statInventoryValue').textContent = '$' + invValue.toFixed(2);
     } catch (error) {
@@ -50,6 +51,7 @@ async function loadRecentInbound() {
     try {
         const orders = await apiRequest('/api/inbound');
         const container = document.getElementById('recentInbound');
+        if (!container) return;
         if (!orders || orders.length === 0) {
             container.innerHTML = '<p style="color:#888;">No inbound orders</p>';
             return;
@@ -74,6 +76,7 @@ async function loadRecentOutbound() {
     try {
         const orders = await apiRequest('/api/outbound');
         const container = document.getElementById('recentOutbound');
+        if (!container) return;
         if (!orders || orders.length === 0) {
             container.innerHTML = '<p style="color:#888;">No outbound orders</p>';
             return;
@@ -96,8 +99,13 @@ async function loadRecentOutbound() {
 
 async function loadLowStockAlert() {
     try {
+        console.log('⚠️ Loading low stock alert...');
         const items = await apiRequest('/api/inventory/low-stock');
         const container = document.getElementById('lowStockAlert');
+        if (!container) {
+            console.error('❌ lowStockAlert container not found');
+            return;
+        }
         if (!items || items.length === 0) {
             container.innerHTML = '<p style="color:green;">✅ All items at healthy stock levels</p>';
             return;
@@ -119,10 +127,12 @@ async function loadLowStockAlert() {
         `;
     } catch (error) {
         console.error('Error loading low stock alert:', error);
-        container.innerHTML = '<p style="color:#888;">No low stock items</p>';
+        const container = document.getElementById('lowStockAlert');
+        if (container) {
+            container.innerHTML = '<p style="color:#888;">Error loading low stock data</p>';
+        }
     }
 }
 
 // EXPOSE GLOBALLY
 window.loadDashboard = loadDashboard;
-window.loadDashboardStats = loadDashboardStats;
