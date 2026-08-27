@@ -119,6 +119,26 @@ app.post("/login", async (req, res) => {
     }
 });
 
+// Update the reports route in server.js
+app.get('/api/reports/dashboard-stats', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                (SELECT COUNT(*) FROM products) as total_products,
+                (SELECT COUNT(*) FROM inbound_orders WHERE status IN ('pending', 'partial')) as pending_inbound,
+                (SELECT COUNT(*) FROM outbound_orders WHERE status IN ('pending', 'partial', 'picked')) as pending_outbound,
+                (SELECT COUNT(*) FROM delivery_routes WHERE status = 'scheduled') as pending_deliveries,
+                (SELECT COUNT(*) FROM inventory WHERE quantity <= min_stock) as low_stock_items,
+                (SELECT COALESCE(SUM(quantity * 0), 0) FROM inventory) as inventory_value
+            FROM (SELECT 1) dummy
+        `);
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Create user (admin only)
 app.post("/create-user", verifyToken, async (req, res) => {
     if (req.user.role !== 'admin') {
@@ -189,12 +209,17 @@ app.get('/api/suppliers', async (req, res) => {
     }
 });
 
-// Get all products (for dropdown)
+// Add this to server.js - Get products for inbound dropdown
 app.get('/api/products', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, name, sku FROM products ORDER BY name');
+        const result = await pool.query(`
+            SELECT id, name, sku, unit_cost 
+            FROM products 
+            ORDER BY name
+        `);
         res.json(result.rows);
     } catch (error) {
+        console.error('Error fetching products:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -236,5 +261,6 @@ const startServer = async () => {
         process.exit(1);
     }
 };
+
 
 startServer();
