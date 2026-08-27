@@ -65,7 +65,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Get low stock items
+// Update the low-stock route
 router.get('/low-stock', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -73,11 +73,9 @@ router.get('/low-stock', async (req, res) => {
                 i.*,
                 p.name as product_name,
                 p.sku,
-                p.min_stock,
-                l.aisle || '-' || l.rack || '-' || l.shelf || '-' || l.bin as location
+                p.min_stock
             FROM inventory i
             LEFT JOIN products p ON i.product_id = p.id
-            LEFT JOIN warehouse_locations l ON i.location_id = l.id
             WHERE i.quantity <= p.min_stock
             ORDER BY (i.quantity - p.min_stock) ASC
         `);
