@@ -3,7 +3,10 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database');
 
-// Get all inbound orders
+// =====================================================
+// GET ALL INBOUND ORDERS
+// =====================================================
+
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -23,7 +26,10 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Get single inbound order
+// =====================================================
+// GET SINGLE INBOUND ORDER
+// =====================================================
+
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -47,7 +53,10 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Create inbound order
+// =====================================================
+// CREATE INBOUND ORDER
+// =====================================================
+
 router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -59,10 +68,8 @@ router.post('/', async (req, res) => {
 
         await client.query('BEGIN');
 
-        // Generate order number
         const orderNumber = `INB-${Date.now()}`;
 
-        // Create inbound order
         const orderResult = await client.query(`
             INSERT INTO inbound_orders (order_number, supplier_id, expected_date, notes, created_by, status)
             VALUES ($1, $2, $3, $4, $5, 'pending')
@@ -71,7 +78,6 @@ router.post('/', async (req, res) => {
 
         const orderId = orderResult.rows[0].id;
 
-        // Add items
         for (const item of items) {
             await client.query(`
                 INSERT INTO inbound_items (inbound_order_id, product_id, expected_quantity, unit_cost, total_cost)
@@ -91,10 +97,10 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Receive inbound order
-const locationId = item.location_id || 1; // Add this line
+// =====================================================
+// RECEIVE INBOUND ORDER - FIXED
+// =====================================================
 
-// routes/inbound.js - Fix receive endpoint
 router.put('/:id/receive', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -227,7 +233,10 @@ router.put('/:id/receive', async (req, res) => {
     }
 });
 
-// Get inbound items
+// =====================================================
+// GET INBOUND ITEMS
+// =====================================================
+
 router.get('/:id/items', async (req, res) => {
     try {
         const { id } = req.params;
@@ -249,7 +258,10 @@ router.get('/:id/items', async (req, res) => {
     }
 });
 
-// Delete inbound order
+// =====================================================
+// DELETE INBOUND ORDER
+// =====================================================
+
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
