@@ -547,12 +547,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // GLOBALLY EXPOSE FUNCTIONS
 // =====================================================
 
+// At the bottom of app.js - Ensure all functions are globally accessible
 window.login = login;
 window.logout = logout;
 window.showPage = showPage;
-window.createUser = createUser;
-window.deleteUser = deleteUser;
-window.showCreateUser = showCreateUser;
 window.apiRequest = apiRequest;
 window.formatDate = formatDate;
 window.statusBadge = statusBadge;
@@ -564,3 +562,6 @@ window.loadDelivery = loadDelivery;
 window.loadWarehouse = loadWarehouse;
 window.loadReports = loadReports;
 window.loadSettings = loadSettings;
+window.showCreateInbound = showCreateInbound;
+window.createInbound = createInbound;
+window.addInboundItem = addInboundItem;
