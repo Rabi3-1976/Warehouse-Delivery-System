@@ -167,6 +167,7 @@ router.put('/:id/receive', async (req, res) => {
             const inventoryCheck = await client.query(
                 'SELECT * FROM inventory WHERE product_id = $1 AND location_id = $2',
                 [item.product_id, locationId]
+                const locationId = item.location_id || 1; // Add this line
             );
 
             if (inventoryCheck.rowCount === 0) {
