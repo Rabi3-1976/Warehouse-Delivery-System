@@ -65,7 +65,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Update the low-stock route
+// routes/inventory.js - Fix low-stock endpoint
 router.get('/low-stock', async (req, res) => {
     try {
         const result = await pool.query(`
