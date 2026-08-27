@@ -92,6 +92,7 @@ router.post('/', async (req, res) => {
 });
 
 // Receive inbound order
+// routes/inbound.js - Fix receive endpoint
 router.put('/:id/receive', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -128,23 +129,57 @@ router.put('/:id/receive', async (req, res) => {
                 throw new Error(`Product ${item.product_id} not found in order`);
             }
 
+            // Get the product details
+            const productResult = await client.query(
+                'SELECT * FROM products WHERE id = $1',
+                [item.product_id]
+            );
+            const product = productResult.rows[0];
+
+            // Find a location for this product (or use a default one)
+            let locationId = item.location_id || 1; // Default location ID
+
+            // If location doesn't exist, create one
+            const locationCheck = await client.query(
+                'SELECT id FROM warehouse_locations WHERE id = $1',
+                [locationId]
+            );
+
+            if (locationCheck.rowCount === 0) {
+                // Use the first available location
+                const defaultLocation = await client.query(
+                    'SELECT id FROM warehouse_locations LIMIT 1'
+                );
+                if (defaultLocation.rowCount > 0) {
+                    locationId = defaultLocation.rows[0].id;
+                } else {
+                    // Create a default location if none exists
+                    const newLocation = await client.query(`
+                        INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin)
+                        VALUES (1, 'A', '1', '1', '1')
+                        RETURNING id
+                    `);
+                    locationId = newLocation.rows[0].id;
+                }
+            }
+
             // Update inventory
             const inventoryCheck = await client.query(
                 'SELECT * FROM inventory WHERE product_id = $1 AND location_id = $2',
-                [item.product_id, item.location_id]
+                [item.product_id, locationId]
             );
 
             if (inventoryCheck.rowCount === 0) {
                 await client.query(`
                     INSERT INTO inventory (product_id, location_id, quantity)
                     VALUES ($1, $2, $3)
-                `, [item.product_id, item.location_id, item.quantity_received]);
+                `, [item.product_id, locationId, item.quantity_received]);
             } else {
                 await client.query(`
                     UPDATE inventory 
                     SET quantity = quantity + $1, updated_at = NOW()
                     WHERE product_id = $2 AND location_id = $3
-                `, [item.quantity_received, item.product_id, item.location_id]);
+                `, [item.quantity_received, item.product_id, locationId]);
             }
 
             // Record transaction
@@ -153,7 +188,7 @@ router.put('/:id/receive', async (req, res) => {
                     product_id, location_id, transaction_type, 
                     quantity, reference_type, reference_id, notes, created_by
                 ) VALUES ($1, $2, 'inbound', $3, 'inbound_order', $4, $5, $6)
-            `, [item.product_id, item.location_id, item.quantity_received, id, 'Received from inbound order', received_by]);
+            `, [item.product_id, locationId, item.quantity_received, id, 'Received from inbound order', received_by]);
 
             // Check if all items received
             const remainingCheck = await client.query(`
