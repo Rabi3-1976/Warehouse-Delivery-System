@@ -209,17 +209,22 @@ app.get('/api/suppliers', async (req, res) => {
     }
 });
 
-// Add this to server.js - Get products for inbound dropdown
+// =====================================================
+// PRODUCTS ROUTE
+// =====================================================
+
 app.get('/api/products', async (req, res) => {
     try {
+        console.log('📦 Fetching products...');
         const result = await pool.query(`
             SELECT id, name, sku, unit_cost 
             FROM products 
             ORDER BY name
         `);
+        console.log('✅ Products found:', result.rows.length);
         res.json(result.rows);
     } catch (error) {
-        console.error('Error fetching products:', error);
+        console.error('❌ Error fetching products:', error);
         res.status(500).json({ error: error.message });
     }
 });
