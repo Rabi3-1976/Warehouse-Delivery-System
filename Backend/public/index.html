@@ -10,39 +10,40 @@
 <body>
 
     <!-- LOGIN PAGE -->
-    <div id="loginPage">
-        <div class="login-container">
+    <div id="loginPage" style="display:flex; justify-content:center; align-items:center; min-height:100vh; background:#1a1a2e;">
+        <div class="login-container" style="background:white; padding:40px; border-radius:10px; width:350px; text-align:center;">
             <h1>🏗️ W&D System</h1>
             <p>Warehouse & Delivery Management</p>
-            <form onsubmit="login(event)">
-                <input type="text" id="loginUsername" placeholder="Username" required />
-                <input type="password" id="loginPassword" placeholder="Password" required />
-                <button type="submit" class="btn btn-primary">Login</button>
+            <form id="loginForm">
+                <input type="text" id="loginUsername" placeholder="Username" required style="width:100%; padding:12px; margin:8px 0; border:1px solid #ddd; border-radius:5px;" />
+                <input type="password" id="loginPassword" placeholder="Password" required style="width:100%; padding:12px; margin:8px 0; border:1px solid #ddd; border-radius:5px;" />
+                <button type="submit" class="btn btn-primary" style="width:100%; padding:12px;">Login</button>
             </form>
-            <div id="loginError" style="color:red;margin-top:10px;"></div>
+            <div id="loginError" style="color:red; margin-top:10px;"></div>
         </div>
     </div>
 
     <!-- MAIN APP -->
     <div id="app" style="display:none;">
-        <nav id="sidebar">
-            <div class="sidebar-header">
+        <!-- Sidebar -->
+        <nav id="sidebar" style="position:fixed; left:0; top:0; width:240px; height:100%; background:#1a1a2e; color:white; padding:20px 0; overflow-y:auto; z-index:1000;">
+            <div class="sidebar-header" style="padding:0 20px 20px; border-bottom:1px solid #333;">
                 <h2>🏗️ W&D System</h2>
             </div>
-            <ul class="sidebar-menu">
-                <li><a href="#" onclick="showPage('dashboard')" class="active"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
-                <li><a href="#" onclick="showPage('inbound')"><i class="fas fa-arrow-down"></i> Inbound</a></li>
-                <li><a href="#" onclick="showPage('outbound')"><i class="fas fa-arrow-up"></i> Outbound</a></li>
-                <li><a href="#" onclick="showPage('inventory')"><i class="fas fa-boxes"></i> Inventory</a></li>
-                <li><a href="#" onclick="showPage('delivery')"><i class="fas fa-truck"></i> Delivery</a></li>
-                <li><a href="#" onclick="showPage('warehouse')"><i class="fas fa-warehouse"></i> Warehouse</a></li>
-                <li><a href="#" onclick="showPage('reports')"><i class="fas fa-file-alt"></i> Reports</a></li>
-                <li><a href="#" onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</a></li>
+            <ul class="sidebar-menu" style="list-style:none; padding:20px 0;">
+                <li><a href="#" onclick="showPage('dashboard')" class="active" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+                <li><a href="#" onclick="showPage('inbound')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-arrow-down"></i> Inbound</a></li>
+                <li><a href="#" onclick="showPage('outbound')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-arrow-up"></i> Outbound</a></li>
+                <li><a href="#" onclick="showPage('inventory')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-boxes"></i> Inventory</a></li>
+                <li><a href="#" onclick="showPage('delivery')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-truck"></i> Delivery</a></li>
+                <li><a href="#" onclick="showPage('warehouse')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-warehouse"></i> Warehouse</a></li>
+                <li><a href="#" onclick="showPage('reports')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-file-alt"></i> Reports</a></li>
+                <li><a href="#" onclick="showPage('settings')" style="display:flex; align-items:center; padding:12px 20px; color:#aaa; text-decoration:none; border-left:3px solid transparent;"><i class="fas fa-cog"></i> Settings</a></li>
             </ul>
         </nav>
 
-        <main id="main-content">
-            <header class="header">
+        <main id="main-content" style="margin-left:240px; min-height:100vh; padding:20px;">
+            <header class="header" style="background:white; padding:20px 30px; border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.1); display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <div class="header-title">
                     <h1 id="page-title">Dashboard</h1>
                 </div>
@@ -57,6 +58,9 @@
         </main>
     </div>
 
+    <!-- ===================================================== -->
+    <!-- ALL SCRIPTS - MAKE SURE THESE ARE ALL INCLUDED -->
+    <!-- ===================================================== -->
     <script src="/js/app.js"></script>
     <script src="/js/dashboard.js"></script>
     <script src="/js/inbound.js"></script>
