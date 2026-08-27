@@ -1,4 +1,4 @@
-// dashboard.js
+// dashboard.js - FIXED
 
 async function loadDashboard(container) {
     container.innerHTML = `
@@ -17,21 +17,30 @@ async function loadDashboard(container) {
         <div class="table-container"><h3>⚠️ Low Stock Alert</h3><div id="lowStockAlert">Loading...</div></div>
     `;
 
-    await loadDashboardStats();
-    await loadRecentInbound();
-    await loadRecentOutbound();
-    await loadLowStockAlert();
+    try {
+        await loadDashboardStats();
+        await loadRecentInbound();
+        await loadRecentOutbound();
+        await loadLowStockAlert();
+    } catch (error) {
+        console.error('Dashboard error:', error);
+    }
 }
 
 async function loadDashboardStats() {
     try {
         const stats = await apiRequest('/api/reports/dashboard-stats');
+        console.log('📊 Stats received:', stats);
+        
         document.getElementById('statProducts').textContent = stats.total_products || 0;
         document.getElementById('statInbound').textContent = stats.pending_inbound || 0;
         document.getElementById('statOutbound').textContent = stats.pending_outbound || 0;
         document.getElementById('statDeliveries').textContent = stats.pending_deliveries || 0;
         document.getElementById('statLowStock').textContent = stats.low_stock_items || 0;
-        document.getElementById('statInventoryValue').textContent = '$' + (stats.inventory_value || 0).toFixed(2);
+        
+        // FIX: Ensure inventory_value is a number
+        const invValue = parseFloat(stats.inventory_value) || 0;
+        document.getElementById('statInventoryValue').textContent = '$' + invValue.toFixed(2);
     } catch (error) {
         console.error('Error loading dashboard stats:', error);
     }
@@ -110,5 +119,10 @@ async function loadLowStockAlert() {
         `;
     } catch (error) {
         console.error('Error loading low stock alert:', error);
+        container.innerHTML = '<p style="color:#888;">No low stock items</p>';
     }
 }
+
+// EXPOSE GLOBALLY
+window.loadDashboard = loadDashboard;
+window.loadDashboardStats = loadDashboardStats;
