@@ -1,348 +1,268 @@
-// inbound.js - CLEAN WORKING VERSION
+// routes/inbound.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../database');
 
-console.log('✅ inbound.js loaded');
-
-// =====================================================
-// LOAD INBOUND PAGE
-// =====================================================
-
-async function loadInbound(container) {
-    console.log('📦 loadInbound called');
-    container.innerHTML = `
-        <div class="table-container">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                <h3>Inbound Orders</h3>
-                <button class="btn btn-primary" onclick="showCreateInbound()">+ New Inbound</button>
-            </div>
-            <table>
-                <thead>
-                    <tr><th>Order #</th><th>Supplier</th><th>Status</th><th>Date</th><th>Actions</th></tr>
-                </thead>
-                <tbody id="inboundTableBody">
-                    <tr><td colspan="5">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    `;
-    await loadInboundOrders();
-}
-
-// =====================================================
-// LOAD INBOUND ORDERS
-// =====================================================
-
-async function loadInboundOrders() {
-    console.log('📋 loadInboundOrders called');
+// Get all inbound orders
+router.get('/', async (req, res) => {
     try {
-        const orders = await apiRequest('/api/inbound');
-        console.log('📦 Orders received:', orders);
-        const tbody = document.getElementById('inboundTableBody');
+        const result = await pool.query(`
+            SELECT 
+                i.*,
+                s.name as supplier_name,
+                u.username as created_by_name
+            FROM inbound_orders i
+            LEFT JOIN suppliers s ON i.supplier_id = s.id
+            LEFT JOIN users u ON i.created_by = u.id
+            ORDER BY i.created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching inbound orders:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single inbound order
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT 
+                i.*,
+                s.name as supplier_name,
+                u.username as created_by_name
+            FROM inbound_orders i
+            LEFT JOIN suppliers s ON i.supplier_id = s.id
+            LEFT JOIN users u ON i.created_by = u.id
+            WHERE i.id = $1
+        `, [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Inbound order not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error fetching inbound order:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create inbound order
+router.post('/', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { supplier_id, expected_date, notes, items, created_by } = req.body;
         
-        if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5">No inbound orders</td></tr>';
-            return;
+        if (!supplier_id || !items || !items.length) {
+            return res.status(400).json({ error: 'Supplier and items are required' });
         }
 
-        tbody.innerHTML = orders.map(o => `
-            <tr>
-                <td><strong>${o.order_number}</strong></td>
-                <td>${o.supplier_name || '-'}</td>
-                <td>${statusBadge(o.status)}</td>
-                <td>${formatDate(o.created_at)}</td>
-                <td>
-                    ${o.status === 'pending' || o.status === 'partial' ? 
-                        `<button class="btn btn-success btn-sm" onclick="showReceiveInbound(${o.id})">Receive</button>` : ''}
-                    <button class="btn btn-info btn-sm" onclick="viewInbound(${o.id})">View</button>
-                </td>
-            </tr>
-        `).join('');
-        console.log('✅ Inbound orders displayed');
+        await client.query('BEGIN');
+
+        // Generate order number
+        const orderNumber = `INB-${Date.now()}`;
+
+        // Create inbound order
+        const orderResult = await client.query(`
+            INSERT INTO inbound_orders (order_number, supplier_id, expected_date, notes, created_by, status)
+            VALUES ($1, $2, $3, $4, $5, 'pending')
+            RETURNING *
+        `, [orderNumber, supplier_id, expected_date, notes, created_by]);
+
+        const orderId = orderResult.rows[0].id;
+
+        // Add items
+        for (const item of items) {
+            await client.query(`
+                INSERT INTO inbound_items (inbound_order_id, product_id, expected_quantity, unit_cost, total_cost)
+                VALUES ($1, $2, $3, $4, $5)
+            `, [orderId, item.product_id, item.quantity, item.unit_cost || 0, (item.quantity * (item.unit_cost || 0))]);
+        }
+
+        await client.query('COMMIT');
+
+        res.status(201).json(orderResult.rows[0]);
     } catch (error) {
-        console.error('❌ Error loading inbound orders:', error);
-        document.getElementById('inboundTableBody').innerHTML = `<tr><td colspan="5">Error: ${error.message}</td></tr>`;
+        await client.query('ROLLBACK');
+        console.error('Error creating inbound order:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
-}
+});
 
-// =====================================================
-// SHOW CREATE INBOUND - CLEAN VERSION
-// =====================================================
-
-async function showCreateInbound() {
-    console.log('➕ showCreateInbound called');
+// Receive inbound order
+// routes/inbound.js - Fix receive endpoint
+router.put('/:id/receive', async (req, res) => {
+    const client = await pool.connect();
     try {
-        // Fetch suppliers and products
-        const [suppliers, products] = await Promise.all([
-            apiRequest('/api/suppliers'),
-            apiRequest('/api/products')
-        ]);
+        const { id } = req.params;
+        const { items, received_by } = req.body;
 
-        console.log('📋 Suppliers:', suppliers);
-        console.log('📦 Products:', products);
-
-        if (!suppliers || suppliers.length === 0) {
-            alert('⚠️ Please add a supplier first!');
-            return;
-        }
-        if (!products || products.length === 0) {
-            alert('⚠️ Please add products first!');
-            return;
+        if (!items || !items.length) {
+            return res.status(400).json({ error: 'Items are required' });
         }
 
-        // Create modal
-        const modal = document.createElement('div');
-        modal.className = 'modal active';
-        modal.id = 'inboundModal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Create Inbound Order</h2>
-                    <span class="modal-close" onclick="document.getElementById('inboundModal').remove()">&times;</span>
-                </div>
-                <form id="createInboundForm" onsubmit="createInbound(event)">
-                    <div class="form-group">
-                        <label>Supplier *</label>
-                        <select class="form-control" id="inboundSupplier" required>
-                            <option value="">Select Supplier</option>
-                            ${suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Expected Date</label>
-                        <input type="date" class="form-control" id="inboundExpectedDate">
-                    </div>
-                    <div class="form-group">
-                        <label>Notes</label>
-                        <textarea class="form-control" id="inboundNotes" rows="2"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Items</label>
-                        <div id="inboundItems">
-                            <div class="inbound-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-                                <select class="form-control" style="flex:2; min-width:150px;" id="itemProduct_0">
-                                    <option value="">Select Product</option>
-                                    ${products.map(p => `<option value="${p.id}">${p.id} - ${p.name}</option>`).join('')}
-                                </select>
-                                <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_0" min="1">
-                                <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_0" step="0.01">
-                                <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="addInboundItem()">+ Add Item</button>
-                    </div>
-                    <button type="submit" class="btn btn-success" style="margin-top:15px;">Create Order</button>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        console.log('✅ Modal created successfully');
+        await client.query('BEGIN');
 
-    } catch (error) {
-        console.error('❌ Error in showCreateInbound:', error);
-        alert('Error loading form: ' + error.message);
-    }
-}
-
-// =====================================================
-// ADD INBOUND ITEM
-// =====================================================
-
-let itemCounter = 0;
-
-function addInboundItem() {
-    console.log('➕ addInboundItem called');
-    itemCounter++;
-    const container = document.getElementById('inboundItems');
-    if (!container) {
-        console.error('❌ inboundItems container not found!');
-        return;
-    }
-    const div = document.createElement('div');
-    div.className = 'inbound-item';
-    div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;';
-    div.innerHTML = `
-        <input type="text" class="form-control" placeholder="Product ID" style="flex:2; min-width:150px;" id="itemProduct_${itemCounter}">
-        <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_${itemCounter}" min="1">
-        <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_${itemCounter}" step="0.01">
-        <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
-    `;
-    container.appendChild(div);
-    console.log('✅ Item added');
-}
-
-// =====================================================
-// CREATE INBOUND ORDER
-// =====================================================
-
-async function createInbound(e) {
-    e.preventDefault();
-    console.log('📝 createInbound called');
-
-    try {
-        const supplier_id = document.getElementById('inboundSupplier').value;
-        const expected_date = document.getElementById('inboundExpectedDate').value;
-        const notes = document.getElementById('inboundNotes').value;
-
-        if (!supplier_id) {
-            alert('Please select a supplier');
-            return;
+        // Check if order exists and is pending
+        const orderCheck = await client.query(
+            'SELECT * FROM inbound_orders WHERE id = $1 AND status = $2',
+            [id, 'pending']
+        );
+        if (orderCheck.rowCount === 0) {
+            throw new Error('Order not found or already received');
         }
 
-        // Collect items
-        const itemElements = document.querySelectorAll('.inbound-item');
-        const items = [];
-        itemElements.forEach((el) => {
-            const productInput = el.querySelector('select') || el.querySelector('input[placeholder="Product ID"]');
-            const qtyInput = el.querySelector('input[placeholder="Qty"]');
-            const costInput = el.querySelector('input[placeholder="Unit Cost"]');
-            
-            const product_id = productInput ? productInput.value : '';
-            const quantity = qtyInput ? parseInt(qtyInput.value) : 0;
-            const unit_cost = costInput ? parseFloat(costInput.value) : 0;
+        let allReceived = true;
 
-            if (product_id && quantity > 0) {
-                items.push({ 
-                    product_id: parseInt(product_id), 
-                    quantity, 
-                    unit_cost: unit_cost || 0 
-                });
+        for (const item of items) {
+            // Update received quantity
+            const updateResult = await client.query(`
+                UPDATE inbound_items 
+                SET received_quantity = received_quantity + $1
+                WHERE inbound_order_id = $2 AND product_id = $3
+                RETURNING *
+            `, [item.quantity_received, id, item.product_id]);
+
+            if (updateResult.rowCount === 0) {
+                throw new Error(`Product ${item.product_id} not found in order`);
             }
-        });
 
-        if (items.length === 0) {
-            alert('Please add at least one valid item');
-            return;
-        }
+            // Get the product details
+            const productResult = await client.query(
+                'SELECT * FROM products WHERE id = $1',
+                [item.product_id]
+            );
+            const product = productResult.rows[0];
 
-        const data = {
-            supplier_id: parseInt(supplier_id),
-            expected_date: expected_date || null,
-            notes: notes || '',
-            items: items,
-            created_by: 1
-        };
+            // Find a location for this product (or use a default one)
+            let locationId = item.location_id || 1; // Default location ID
 
-        console.log('📤 Sending:', data);
-        const result = await apiRequest('/api/inbound', 'POST', data);
-        console.log('✅ Result:', result);
+            // If location doesn't exist, create one
+            const locationCheck = await client.query(
+                'SELECT id FROM warehouse_locations WHERE id = $1',
+                [locationId]
+            );
 
-        alert('✅ Inbound order created successfully!');
-        document.getElementById('inboundModal')?.remove();
-        await loadInboundOrders();
-
-    } catch (error) {
-        console.error('❌ Error creating inbound:', error);
-        alert('❌ Error: ' + error.message);
-    }
-}
-
-// =====================================================
-// RECEIVE INBOUND ORDER
-// =====================================================
-
-async function showReceiveInbound(orderId) {
-    console.log('📦 showReceiveInbound called:', orderId);
-    try {
-        const [order, items] = await Promise.all([
-            apiRequest(`/api/inbound/${orderId}`),
-            apiRequest(`/api/inbound/${orderId}/items`)
-        ]);
-
-        const modal = document.createElement('div');
-        modal.className = 'modal active';
-        modal.id = 'receiveModal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Receive: ${order.order_number}</h2>
-                    <span class="modal-close" onclick="document.getElementById('receiveModal').remove()">&times;</span>
-                </div>
-                <form id="receiveInboundForm" onsubmit="receiveInbound(event, ${orderId})">
-                    <p><strong>Supplier:</strong> ${order.supplier_name}</p>
-                    <div class="form-group">
-                        <label>Received By</label>
-                        <input type="text" class="form-control" id="receivedBy" value="Admin" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Items</label>
-                        <div id="receiveItems">
-                            ${items && items.length > 0 ? items.map((item, idx) => `
-                                <div class="receive-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
-                                    <span style="flex:2;">${item.product_name || 'Product ' + item.product_id}</span>
-                                    <span style="flex:1;">Expected: ${item.expected_quantity}</span>
-                                    <span style="flex:1;">Received: ${item.received_quantity || 0}</span>
-                                    <input type="number" class="form-control" placeholder="Qty to receive" style="flex:1; min-width:100px;" 
-                                           id="receiveQty_${idx}" min="0" max="${item.expected_quantity - (item.received_quantity || 0)}">
-                                    <input type="hidden" value="${item.product_id}">
-                                </div>
-                            `).join('') : '<p>No items</p>'}
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success">Receive Items</button>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    } catch (error) {
-        console.error('Error showing receive:', error);
-        alert('Error: ' + error.message);
-    }
-}
-
-async function receiveInbound(e, orderId) {
-    e.preventDefault();
-    try {
-        const received_by = document.getElementById('receivedBy').value;
-        const items = [];
-        document.querySelectorAll('.receive-item').forEach((el, idx) => {
-            const productId = el.querySelector('input[type="hidden"]').value;
-            const qtyInput = document.getElementById(`receiveQty_${idx}`);
-            const quantity_received = parseInt(qtyInput?.value || 0);
-            if (quantity_received > 0) {
-                items.push({ product_id: parseInt(productId), quantity_received });
+            if (locationCheck.rowCount === 0) {
+                // Use the first available location
+                const defaultLocation = await client.query(
+                    'SELECT id FROM warehouse_locations LIMIT 1'
+                );
+                if (defaultLocation.rowCount > 0) {
+                    locationId = defaultLocation.rows[0].id;
+                } else {
+                    // Create a default location if none exists
+                    const newLocation = await client.query(`
+                        INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin)
+                        VALUES (1, 'A', '1', '1', '1')
+                        RETURNING id
+                    `);
+                    locationId = newLocation.rows[0].id;
+                }
             }
-        });
 
-        if (items.length === 0) {
-            alert('Please enter quantities to receive');
-            return;
+            // Update inventory
+            const inventoryCheck = await client.query(
+                'SELECT * FROM inventory WHERE product_id = $1 AND location_id = $2',
+                [item.product_id, locationId]
+            );
+
+            if (inventoryCheck.rowCount === 0) {
+                await client.query(`
+                    INSERT INTO inventory (product_id, location_id, quantity)
+                    VALUES ($1, $2, $3)
+                `, [item.product_id, locationId, item.quantity_received]);
+            } else {
+                await client.query(`
+                    UPDATE inventory 
+                    SET quantity = quantity + $1, updated_at = NOW()
+                    WHERE product_id = $2 AND location_id = $3
+                `, [item.quantity_received, item.product_id, locationId]);
+            }
+
+            // Record transaction
+            await client.query(`
+                INSERT INTO inventory_transactions (
+                    product_id, location_id, transaction_type, 
+                    quantity, reference_type, reference_id, notes, created_by
+                ) VALUES ($1, $2, 'inbound', $3, 'inbound_order', $4, $5, $6)
+            `, [item.product_id, locationId, item.quantity_received, id, 'Received from inbound order', received_by]);
+
+            // Check if all items received
+            const remainingCheck = await client.query(`
+                SELECT COUNT(*) as count FROM inbound_items 
+                WHERE inbound_order_id = $1 AND expected_quantity > received_quantity
+            `, [id]);
+
+            if (parseInt(remainingCheck.rows[0].count) > 0) {
+                allReceived = false;
+            }
         }
 
-        const result = await apiRequest(`/api/inbound/${orderId}/receive`, 'PUT', { items, received_by });
-        console.log('✅ Result:', result);
+        // Update order status
+        const newStatus = allReceived ? 'completed' : 'partial';
+        await client.query(`
+            UPDATE inbound_orders 
+            SET status = $1, received_date = NOW(), updated_at = NOW()
+            WHERE id = $2
+        `, [newStatus, id]);
 
-        alert('✅ Items received successfully!');
-        document.getElementById('receiveModal')?.remove();
-        await loadInboundOrders();
+        await client.query('COMMIT');
+
+        res.json({ 
+            success: true, 
+            message: 'Items received successfully',
+            status: newStatus
+        });
     } catch (error) {
-        console.error('❌ Error receiving:', error);
-        alert('❌ Error: ' + error.message);
+        await client.query('ROLLBACK');
+        console.error('Error receiving inbound order:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
-}
+});
 
-// =====================================================
-// VIEW INBOUND ORDER
-// =====================================================
-
-async function viewInbound(orderId) {
+// Get inbound items
+router.get('/:id/items', async (req, res) => {
     try {
-        const order = await apiRequest(`/api/inbound/${orderId}`);
-        alert(`📋 Order ${order.order_number}\nSupplier: ${order.supplier_name}\nStatus: ${order.status}`);
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT 
+                i.*,
+                p.name as product_name,
+                p.sku,
+                l.aisle || '-' || l.rack || '-' || l.shelf || '-' || l.bin as location_name
+            FROM inbound_items i
+            LEFT JOIN products p ON i.product_id = p.id
+            LEFT JOIN warehouse_locations l ON i.location_id = l.id
+            WHERE i.inbound_order_id = $1
+        `, [id]);
+        res.json(result.rows);
     } catch (error) {
-        alert('Error: ' + error.message);
+        console.error('Error fetching inbound items:', error);
+        res.status(500).json({ error: error.message });
     }
-}
+});
 
-// =====================================================
-// EXPOSE GLOBALLY
-// =====================================================
+// Delete inbound order
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(
+            'DELETE FROM inbound_orders WHERE id = $1 AND status = $2 RETURNING id',
+            [id, 'pending']
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found or cannot be deleted' });
+        }
+        res.json({ message: 'Inbound order deleted' });
+    } catch (error) {
+        console.error('Error deleting inbound order:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
-window.loadInbound = loadInbound;
-window.showCreateInbound = showCreateInbound;
-window.createInbound = createInbound;
-window.addInboundItem = addInboundItem;
-window.showReceiveInbound = showReceiveInbound;
-window.receiveInbound = receiveInbound;
-window.viewInbound = viewInbound;
-window.loadInboundOrders = loadInboundOrders;
-
-console.log('✅ inbound.js fully loaded and functions exposed');
+module.exports = router;
