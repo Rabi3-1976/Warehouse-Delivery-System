@@ -141,7 +141,7 @@ async function showCreateInbound() {
 }
 
 // =====================================================
-// ADD INBOUND ITEM
+// ADD INBOUND ITEM - FIXED FOR MULTIPLE ITEMS
 // =====================================================
 
 let itemCounter = 0;
@@ -154,17 +154,38 @@ function addInboundItem() {
         console.error('❌ inboundItems container not found!');
         return;
     }
-    const div = document.createElement('div');
-    div.className = 'inbound-item';
-    div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;';
-    div.innerHTML = `
-        <input type="text" class="form-control" placeholder="Product ID" style="flex:2; min-width:150px;" id="itemProduct_${itemCounter}">
-        <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_${itemCounter}" min="1">
-        <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_${itemCounter}" step="0.01">
-        <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
-    `;
-    container.appendChild(div);
-    console.log('✅ Item added');
+    
+    // Get products for dropdown
+    apiRequest('/api/products').then(products => {
+        const div = document.createElement('div');
+        div.className = 'inbound-item';
+        div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;';
+        div.innerHTML = `
+            <select class="form-control" style="flex:2; min-width:150px;" id="itemProduct_${itemCounter}" onchange="updateProductName(this, ${itemCounter})">
+                <option value="">Select Product</option>
+                ${products.map(p => `<option value="${p.id}">${p.id} - ${p.name}</option>`).join('')}
+            </select>
+            <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_${itemCounter}" min="1">
+            <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_${itemCounter}" step="0.01">
+            <span id="itemName_${itemCounter}" style="flex:1; min-width:120px; font-size:12px; color:#666;"></span>
+            <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
+        `;
+        container.appendChild(div);
+        console.log('✅ Item added, total items:', document.querySelectorAll('.inbound-item').length);
+    }).catch(err => {
+        console.error('Error loading products:', err);
+    });
+}
+
+// Helper function to show product name when selected
+function updateProductName(select, counter) {
+    const nameSpan = document.getElementById(`itemName_${counter}`);
+    if (select.value) {
+        const selectedOption = select.options[select.selectedIndex];
+        nameSpan.textContent = selectedOption.text;
+    } else {
+        nameSpan.textContent = '';
+    }
 }
 
 // =====================================================
