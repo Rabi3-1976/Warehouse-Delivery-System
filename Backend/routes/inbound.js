@@ -88,7 +88,10 @@ router.post('/', async (req, res) => {
     }
 });
 
-// RECEIVE inbound order
+// =====================================================
+// RECEIVE INBOUND ORDER - FIXED (Auto-Detect Location)
+// =====================================================
+
 router.put('/:id/receive', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -101,6 +104,7 @@ router.put('/:id/receive', async (req, res) => {
 
         await client.query('BEGIN');
 
+        // Check if order exists and is pending
         const orderCheck = await client.query(
             'SELECT * FROM inbound_orders WHERE id = $1 AND status = $2',
             [id, 'pending']
@@ -112,6 +116,7 @@ router.put('/:id/receive', async (req, res) => {
         let allReceived = true;
 
         for (const item of items) {
+            // Update received quantity
             const updateResult = await client.query(`
                 UPDATE inbound_items 
                 SET received_quantity = received_quantity + $1
@@ -123,34 +128,47 @@ router.put('/:id/receive', async (req, res) => {
                 throw new Error(`Product ${item.product_id} not found in order`);
             }
 
-            // In routes/inbound.js - RECEIVE endpoint
-            // Find the location section and replace with:
-
-            // Find or create a location for this product
+            // --- FIXED LOCATION LOGIC ---
+            // 1. Try to use the provided location_id
             let locationId = item.location_id;
 
-            // If no location_id provided, find an existing one or create one
+            // 2. If no location_id is provided, find the first available one
             if (!locationId) {
-            // First, try to find any existing location
                 const existingLocation = await client.query(
                     'SELECT id FROM warehouse_locations LIMIT 1'
-                    );
-    
-                    if (existingLocation.rowCount > 0) {
-                        locationId = existingLocation.rows[0].id;
-                        } else {
-            // Create a default location if none exists
-            const newLocation = await client.query(`
-            INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin, created_at)
-            SELECT id, 'A', '1', '1', 'A1-1', NOW()
-            FROM warehouse_zones LIMIT 1
-            RETURNING id
-        `);
-        locationId = newLocation.rows[0].id;
-    }
-}
+                );
+                
+                if (existingLocation.rowCount > 0) {
+                    locationId = existingLocation.rows[0].id;
+                    console.log(`📍 Using existing location ID: ${locationId}`);
+                } else {
+                    // 3. If no locations exist, create one dynamically
+                    const zoneCheck = await client.query('SELECT id FROM warehouse_zones LIMIT 1');
+                    let zoneId = 1;
+                    if (zoneCheck.rowCount > 0) {
+                        zoneId = zoneCheck.rows[0].id;
+                    } else {
+                        // Create a zone if none exists
+                        const newZone = await client.query(`
+                            INSERT INTO warehouse_zones (name, code, description, created_at)
+                            VALUES ('Default Zone', 'Z-001', 'Auto-created zone', NOW())
+                            RETURNING id
+                        `);
+                        zoneId = newZone.rows[0].id;
+                    }
 
-            // Update inventory
+                    const newLocation = await client.query(`
+                        INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin, created_at)
+                        VALUES ($1, 'A', '1', '1', 'A1-1', NOW())
+                        RETURNING id
+                    `, [zoneId]);
+                    locationId = newLocation.rows[0].id;
+                    console.log(`📍 Created new location ID: ${locationId}`);
+                }
+            }
+            // --- END FIXED LOCATION LOGIC ---
+
+            // Update inventory with the valid location_id
             const inventoryCheck = await client.query(
                 'SELECT * FROM inventory WHERE product_id = $1 AND location_id = $2',
                 [item.product_id, locationId]
@@ -169,6 +187,7 @@ router.put('/:id/receive', async (req, res) => {
                 `, [item.quantity_received, item.product_id, locationId]);
             }
 
+            // Record transaction
             await client.query(`
                 INSERT INTO inventory_transactions (
                     product_id, location_id, transaction_type, 
@@ -176,6 +195,7 @@ router.put('/:id/receive', async (req, res) => {
                 ) VALUES ($1, $2, 'inbound', $3, 'inbound_order', $4, $5, $6)
             `, [item.product_id, locationId, item.quantity_received, id, 'Received from inbound order', received_by]);
 
+            // Check if all items received
             const remainingCheck = await client.query(`
                 SELECT COUNT(*) as count FROM inbound_items 
                 WHERE inbound_order_id = $1 AND expected_quantity > received_quantity
@@ -186,6 +206,7 @@ router.put('/:id/receive', async (req, res) => {
             }
         }
 
+        // Update order status
         const newStatus = allReceived ? 'completed' : 'partial';
         await client.query(`
             UPDATE inbound_orders 
