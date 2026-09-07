@@ -189,7 +189,7 @@ function updateProductName(select, counter) {
 }
 
 // =====================================================
-// CREATE INBOUND ORDER
+// CREATE INBOUND ORDER - FIXED FOR MULTIPLE ITEMS
 // =====================================================
 
 async function createInbound(e) {
@@ -206,30 +206,46 @@ async function createInbound(e) {
             return;
         }
 
+        // Collect ALL items
         const itemElements = document.querySelectorAll('.inbound-item');
+        console.log('📦 Found items:', itemElements.length);
+        
         const items = [];
-        itemElements.forEach((el) => {
-            const productInput = el.querySelector('select') || el.querySelector('input[placeholder="Product ID"]');
-            const qtyInput = el.querySelector('input[placeholder="Qty"]');
-            const costInput = el.querySelector('input[placeholder="Unit Cost"]');
+        let hasValidItem = false;
+        
+        itemElements.forEach((el, index) => {
+            // Find the select or input for product
+            const productSelect = el.querySelector(`#itemProduct_${index}`) || 
+                                  el.querySelector('select');
+            const qtyInput = el.querySelector(`#itemQty_${index}`) || 
+                            el.querySelector('input[placeholder="Qty"]');
+            const costInput = el.querySelector(`#itemCost_${index}`) || 
+                            el.querySelector('input[placeholder="Unit Cost"]');
             
-            const product_id = productInput ? productInput.value : '';
+            const product_id = productSelect ? productSelect.value : '';
             const quantity = qtyInput ? parseInt(qtyInput.value) : 0;
             const unit_cost = costInput ? parseFloat(costInput.value) : 0;
+
+            console.log(`📦 Item ${index}:`, { product_id, quantity, unit_cost });
 
             if (product_id && quantity > 0) {
                 items.push({ 
                     product_id: parseInt(product_id), 
-                    quantity, 
+                    quantity: quantity, 
                     unit_cost: unit_cost || 0 
                 });
+                hasValidItem = true;
+            } else if (product_id) {
+                console.warn(`⚠️ Item ${index} has product but no quantity`);
             }
         });
 
-        if (items.length === 0) {
-            alert('Please add at least one valid item');
+        if (!hasValidItem || items.length === 0) {
+            alert('Please add at least one valid item with product and quantity');
             return;
         }
+
+        console.log('📤 Sending items:', items);
 
         const data = {
             supplier_id: parseInt(supplier_id),
@@ -239,70 +255,15 @@ async function createInbound(e) {
             created_by: 1
         };
 
-        console.log('📤 Sending:', data);
         const result = await apiRequest('/api/inbound', 'POST', data);
         console.log('✅ Result:', result);
 
-        alert('✅ Inbound order created successfully!');
+        alert(`✅ Inbound order created successfully with ${items.length} items!`);
         document.getElementById('inboundModal')?.remove();
         await loadInboundOrders();
 
     } catch (error) {
         console.error('❌ Error creating inbound:', error);
-        alert('❌ Error: ' + error.message);
-    }
-}
-
-// =====================================================
-// RECEIVE INBOUND - FIXED
-// =====================================================
-
-async function receiveInbound(e, orderId) {
-    e.preventDefault();
-    console.log('📦 receiveInbound called:', orderId);
-    
-    try {
-        const received_by = document.getElementById('receivedBy').value;
-        
-        // Collect items with quantities
-        const itemElements = document.querySelectorAll('.receive-item');
-        const items = [];
-        
-        itemElements.forEach((el, idx) => {
-            const productId = el.querySelector('input[type="hidden"]').value;
-            const qtyInput = document.getElementById(`receiveQty_${idx}`);
-            const quantity_received = parseInt(qtyInput?.value || 0);
-            
-            if (quantity_received > 0) {
-                items.push({ 
-                    product_id: parseInt(productId), 
-                    quantity_received: quantity_received,
-                    location_id: 1  // Default location
-                });
-            }
-        });
-
-        if (items.length === 0) {
-            alert('Please enter quantities to receive');
-            return;
-        }
-
-        console.log('📤 Receiving items:', items);
-        console.log('📤 Received by:', received_by);
-
-        const result = await apiRequest(`/api/inbound/${orderId}/receive`, 'PUT', { 
-            items: items, 
-            received_by: received_by 
-        });
-        
-        console.log('✅ Result:', result);
-
-        alert('✅ Items received successfully!');
-        document.getElementById('receiveModal')?.remove();
-        await loadInboundOrders();
-
-    } catch (error) {
-        console.error('❌ Error receiving:', error);
         alert('❌ Error: ' + error.message);
     }
 }
