@@ -233,7 +233,7 @@ async function createInbound(e) {
 }
 
 // =====================================================
-// SHOW RECEIVE INBOUND - FIXED
+// SHOW RECEIVE INBOUND - FIXED (User ID instead of name)
 // =====================================================
 
 async function showReceiveInbound(orderId) {
@@ -246,6 +246,17 @@ async function showReceiveInbound(orderId) {
 
         console.log('📋 Order:', order);
         console.log('📦 Items:', items);
+
+        // Get current user ID from localStorage or default to 1
+        let userId = 1;
+        try {
+            const user = JSON.parse(localStorage.getItem('user'));
+            if (user && user.id) {
+                userId = user.id;
+            }
+        } catch (e) {
+            console.log('Using default user ID (1)');
+        }
 
         const modal = document.createElement('div');
         modal.className = 'modal active';
@@ -260,7 +271,8 @@ async function showReceiveInbound(orderId) {
                     <p><strong>Supplier:</strong> ${order.supplier_name}</p>
                     <div class="form-group">
                         <label>Received By</label>
-                        <input type="text" class="form-control" id="receivedBy" value="Admin" required>
+                        <input type="text" class="form-control" id="receivedByName" value="${currentUser?.full_name || 'Admin'}" readonly>
+                        <input type="hidden" class="form-control" id="receivedBy" value="${userId}" required>
                     </div>
                     <div class="form-group">
                         <label>Items</label>
