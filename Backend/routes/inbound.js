@@ -92,17 +92,13 @@ router.post('/', async (req, res) => {
 // RECEIVE INBOUND ORDER - FIXED (Auto-Detect Location)
 // =====================================================
 
-// routes/inbound.js - RECEIVE ENDPOINT WITH DEBUG LOGGING
+// routes/inbound.js - RECEIVE ENDPOINT (FIXED)
 
 router.put('/:id/receive', async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
         const { items, received_by } = req.body;
-
-        console.log('📦 Receiving order ID:', id);
-        console.log('📦 Items received:', JSON.stringify(items, null, 2));
-        console.log('👤 Received by:', received_by);
 
         if (!items || !items.length) {
             return res.status(400).json({ error: 'Items are required' });
@@ -111,25 +107,20 @@ router.put('/:id/receive', async (req, res) => {
         await client.query('BEGIN');
 
         const orderCheck = await client.query(
-            'SELECT * FROM inbound_orders WHERE id = $1 AND status = $2',
-            [id, 'pending']
+            'SELECT * FROM inbound_orders WHERE id = $1 AND status IN ($2, $3)',
+            [id, 'pending', 'partial']
         );
         if (orderCheck.rowCount === 0) {
-            throw new Error('Order not found or already received');
+            throw new Error('Order not found or already completed');
         }
-
-        // --- DEBUG: Check existing locations ---
-        const allLocations = await client.query('SELECT id FROM warehouse_locations');
-        console.log('📍 All locations in database:', allLocations.rows);
 
         let allReceived = true;
 
         for (const item of items) {
-            console.log(`📦 Processing item:`, item);
-
+            // Update received quantity
             const updateResult = await client.query(`
                 UPDATE inbound_items 
-                SET received_quantity = received_quantity + $1
+                SET received_quantity = COALESCE(received_quantity, 0) + $1
                 WHERE inbound_order_id = $2 AND product_id = $3
                 RETURNING *
             `, [item.quantity_received, id, item.product_id]);
@@ -138,50 +129,10 @@ router.put('/:id/receive', async (req, res) => {
                 throw new Error(`Product ${item.product_id} not found in order`);
             }
 
-            // --- FIXED: Get location ID directly from database ---
-            let locationId = null;
-            
-            // First try to get any existing location
-            const existingLocation = await client.query(
-                'SELECT id FROM warehouse_locations LIMIT 1'
-            );
-            console.log('📍 Existing location query result:', existingLocation.rows);
+            // Get location ID
+            let locationId = item.location_id || 12;
 
-            if (existingLocation.rowCount > 0) {
-                locationId = existingLocation.rows[0].id;
-                console.log(`📍 Using existing location ID: ${locationId}`);
-            } else {
-                // If no locations exist, create one
-                const zoneCheck = await client.query('SELECT id FROM warehouse_zones LIMIT 1');
-                let zoneId = 1;
-                if (zoneCheck.rowCount > 0) {
-                    zoneId = zoneCheck.rows[0].id;
-                } else {
-                    const newZone = await client.query(`
-                        INSERT INTO warehouse_zones (name, code, description, created_at)
-                        VALUES ('Default Zone', 'Z-001', 'Auto-created zone', NOW())
-                        RETURNING id
-                    `);
-                    zoneId = newZone.rows[0].id;
-                }
-
-                const newLocation = await client.query(`
-                    INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin, created_at)
-                    VALUES ($1, 'A', '1', '1', 'A1-1', NOW())
-                    RETURNING id
-                `, [zoneId]);
-                locationId = newLocation.rows[0].id;
-                console.log(`📍 Created new location ID: ${locationId}`);
-            }
-
-            // Ensure we have a valid location ID
-            if (!locationId) {
-                throw new Error('Could not find or create a warehouse location');
-            }
-
-            console.log(`📍 FINAL location ID being used: ${locationId}`);
-
-            // Update inventory with the valid location_id
+            // Update inventory
             const inventoryCheck = await client.query(
                 'SELECT * FROM inventory WHERE product_id = $1 AND location_id = $2',
                 [item.product_id, locationId]
@@ -192,37 +143,39 @@ router.put('/:id/receive', async (req, res) => {
                     INSERT INTO inventory (product_id, location_id, quantity)
                     VALUES ($1, $2, $3)
                 `, [item.product_id, locationId, item.quantity_received]);
-                console.log(`✅ Created new inventory record for product ${item.product_id} at location ${locationId}`);
             } else {
                 await client.query(`
                     UPDATE inventory 
                     SET quantity = quantity + $1, updated_at = NOW()
                     WHERE product_id = $2 AND location_id = $3
                 `, [item.quantity_received, item.product_id, locationId]);
-                console.log(`✅ Updated inventory for product ${item.product_id} at location ${locationId}`);
             }
 
+            // Record transaction
             await client.query(`
                 INSERT INTO inventory_transactions (
                     product_id, location_id, transaction_type, 
                     quantity, reference_type, reference_id, notes, created_by
                 ) VALUES ($1, $2, 'inbound', $3, 'inbound_order', $4, $5, $6)
             `, [item.product_id, locationId, item.quantity_received, id, 'Received from inbound order', received_by]);
-
-            const remainingCheck = await client.query(`
-                SELECT COUNT(*) as count FROM inbound_items 
-                WHERE inbound_order_id = $1 AND expected_quantity > received_quantity
-            `, [id]);
-
-            if (parseInt(remainingCheck.rows[0].count) > 0) {
-                allReceived = false;
-            }
         }
 
-        const newStatus = allReceived ? 'completed' : 'partial';
+        // Check if ALL items are fully received
+        const remainingCheck = await client.query(`
+            SELECT COUNT(*) as count FROM inbound_items 
+            WHERE inbound_order_id = $1 AND expected_quantity > COALESCE(received_quantity, 0)
+        `, [id]);
+
+        const remainingCount = parseInt(remainingCheck.rows[0].count);
+        console.log(`📊 Remaining items to receive: ${remainingCount}`);
+
+        // Update order status
+        const newStatus = remainingCount === 0 ? 'completed' : 'partial';
         await client.query(`
             UPDATE inbound_orders 
-            SET status = $1, received_date = NOW(), updated_at = NOW()
+            SET status = $1, 
+                received_date = CASE WHEN $1 = 'completed' THEN NOW() ELSE received_date END,
+                updated_at = NOW()
             WHERE id = $2
         `, [newStatus, id]);
 
@@ -230,12 +183,13 @@ router.put('/:id/receive', async (req, res) => {
 
         res.json({ 
             success: true, 
-            message: 'Items received successfully',
-            status: newStatus
+            message: `Items received successfully. Status: ${newStatus}`,
+            status: newStatus,
+            remaining_items: remainingCount
         });
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('❌ Error receiving inbound order:', error);
+        console.error('Error receiving inbound order:', error);
         res.status(500).json({ error: error.message });
     } finally {
         client.release();
