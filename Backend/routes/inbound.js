@@ -123,8 +123,32 @@ router.put('/:id/receive', async (req, res) => {
                 throw new Error(`Product ${item.product_id} not found in order`);
             }
 
-            // Use default location ID 1
-            const locationId = item.location_id || 1;
+            // In routes/inbound.js - RECEIVE endpoint
+            // Find the location section and replace with:
+
+            // Find or create a location for this product
+            let locationId = item.location_id;
+
+            // If no location_id provided, find an existing one or create one
+            if (!locationId) {
+            // First, try to find any existing location
+                const existingLocation = await client.query(
+                    'SELECT id FROM warehouse_locations LIMIT 1'
+                    );
+    
+                    if (existingLocation.rowCount > 0) {
+                        locationId = existingLocation.rows[0].id;
+                        } else {
+            // Create a default location if none exists
+            const newLocation = await client.query(`
+            INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin, created_at)
+            SELECT id, 'A', '1', '1', 'A1-1', NOW()
+            FROM warehouse_zones LIMIT 1
+            RETURNING id
+        `);
+        locationId = newLocation.rows[0].id;
+    }
+}
 
             // Update inventory
             const inventoryCheck = await client.query(
