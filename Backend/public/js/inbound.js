@@ -28,6 +28,147 @@ async function loadInbound(container) {
 }
 
 // =====================================================
+// RECEIVE INBOUND - FIXED
+// =====================================================
+
+async function receiveInbound(e, orderId) {
+    e.preventDefault();
+    console.log('📦 receiveInbound called:', orderId);
+    
+    try {
+        // Get the user ID from the hidden field
+        let receivedByInput = document.getElementById('receivedBy');
+        let received_by = 1; // Default to admin
+        
+        if (receivedByInput) {
+            received_by = parseInt(receivedByInput.value) || 1;
+        }
+        
+        console.log('👤 Received by user ID:', received_by);
+        
+        // Collect items with quantities
+        const itemElements = document.querySelectorAll('.receive-item');
+        const items = [];
+        
+        itemElements.forEach((el, idx) => {
+            const productId = el.querySelector('input[type="hidden"]')?.value;
+            const qtyInput = document.getElementById(`receiveQty_${idx}`);
+            const quantity_received = parseInt(qtyInput?.value || 0);
+            
+            if (productId && quantity_received > 0) {
+                items.push({ 
+                    product_id: parseInt(productId), 
+                    quantity_received: quantity_received,
+                    location_id: 12  // Your location ID
+                });
+            }
+        });
+
+        if (items.length === 0) {
+            alert('Please enter quantities to receive');
+            return;
+        }
+
+        console.log('📤 Receiving items:', items);
+        console.log('📤 Received by:', received_by);
+
+        // Make sure received_by is a number
+        const requestData = { 
+            items: items, 
+            received_by: received_by  // This must be a number, not a string
+        };
+        
+        console.log('📤 Request data:', requestData);
+
+        const result = await apiRequest(`/api/inbound/${orderId}/receive`, 'PUT', requestData);
+        
+        console.log('✅ Result:', result);
+
+        alert('✅ Items received successfully!');
+        document.getElementById('receiveModal')?.remove();
+        await loadInboundOrders();
+
+    } catch (error) {
+        console.error('❌ Error receiving:', error);
+        alert('❌ Error: ' + error.message);
+    }
+}
+
+// =====================================================
+// SHOW RECEIVE INBOUND - FIXED
+// =====================================================
+
+async function showReceiveInbound(orderId) {
+    console.log('📦 showReceiveInbound called:', orderId);
+    try {
+        const [order, items] = await Promise.all([
+            apiRequest(`/api/inbound/${orderId}`),
+            apiRequest(`/api/inbound/${orderId}/items`)
+        ]);
+
+        console.log('📋 Order:', order);
+        console.log('📦 Items:', items);
+
+        // Get user info from localStorage
+        let userId = 1;
+        let userName = 'Admin';
+        try {
+            const userData = localStorage.getItem('user');
+            if (userData) {
+                const user = JSON.parse(userData);
+                userId = user.id || 1;
+                userName = user.full_name || user.username || 'Admin';
+            }
+        } catch (e) {
+            console.log('Using default user (Admin)');
+        }
+
+        console.log(`👤 User: ${userName} (ID: ${userId})`);
+
+        const modal = document.createElement('div');
+        modal.className = 'modal active';
+        modal.id = 'receiveModal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Receive: ${order.order_number}</h2>
+                    <span class="modal-close" onclick="document.getElementById('receiveModal').remove()">&times;</span>
+                </div>
+                <form id="receiveInboundForm" onsubmit="receiveInbound(event, ${orderId})">
+                    <p><strong>Supplier:</strong> ${order.supplier_name}</p>
+                    <div class="form-group">
+                        <label>Received By</label>
+                        <input type="text" class="form-control" id="receivedByName" value="${userName}" readonly style="background-color:#f5f5f5;">
+                        <input type="hidden" id="receivedBy" value="${userId}">
+                        <small style="color:#888; display:block; margin-top:5px;">User ID: ${userId}</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Items</label>
+                        <div id="receiveItems">
+                            ${items && items.length > 0 ? items.map((item, idx) => `
+                                <div class="receive-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+                                    <span style="flex:2;">${item.product_name || 'Product ' + item.product_id}</span>
+                                    <span style="flex:1;">Expected: ${item.expected_quantity}</span>
+                                    <span style="flex:1;">Received: ${item.received_quantity || 0}</span>
+                                    <input type="number" class="form-control" placeholder="Qty to receive" style="flex:1; min-width:100px;" 
+                                           id="receiveQty_${idx}" min="0" max="${item.expected_quantity - (item.received_quantity || 0)}">
+                                    <input type="hidden" value="${item.product_id}">
+                                </div>
+                            `).join('') : '<p>No items</p>'}
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success">Receive Items</button>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } catch (error) {
+        console.error('Error showing receive:', error);
+        alert('Error loading receive: ' + error.message);
+    }
+}
+
+// =====================================================
 // LOAD INBOUND ORDERS
 // =====================================================
 
