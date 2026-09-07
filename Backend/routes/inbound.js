@@ -92,104 +92,103 @@ router.post('/', async (req, res) => {
 // RECEIVE INBOUND ORDER - FIXED (Auto-Detect Location)
 // =====================================================
 
-// routes/inbound.js - RECEIVE ENDPOINT (FIXED)
+/// =====================================================
+// UPDATE INBOUND ORDER (Admin Only)
+// =====================================================
 
-router.put('/:id/receive', async (req, res) => {
+router.put('/:id', async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
-        const { items, received_by } = req.body;
+        const { supplier_id, expected_date, notes, status, items } = req.body;
 
-        if (!items || !items.length) {
-            return res.status(400).json({ error: 'Items are required' });
+        if (!supplier_id) {
+            return res.status(400).json({ error: 'Supplier is required' });
         }
 
         await client.query('BEGIN');
 
-        const orderCheck = await client.query(
-            'SELECT * FROM inbound_orders WHERE id = $1 AND status IN ($2, $3)',
-            [id, 'pending', 'partial']
-        );
-        if (orderCheck.rowCount === 0) {
-            throw new Error('Order not found or already completed');
-        }
-
-        let allReceived = true;
-
-        for (const item of items) {
-            // Update received quantity
-            const updateResult = await client.query(`
-                UPDATE inbound_items 
-                SET received_quantity = COALESCE(received_quantity, 0) + $1
-                WHERE inbound_order_id = $2 AND product_id = $3
-                RETURNING *
-            `, [item.quantity_received, id, item.product_id]);
-
-            if (updateResult.rowCount === 0) {
-                throw new Error(`Product ${item.product_id} not found in order`);
-            }
-
-            // Get location ID
-            let locationId = item.location_id || 12;
-
-            // Update inventory
-            const inventoryCheck = await client.query(
-                'SELECT * FROM inventory WHERE product_id = $1 AND location_id = $2',
-                [item.product_id, locationId]
-            );
-
-            if (inventoryCheck.rowCount === 0) {
-                await client.query(`
-                    INSERT INTO inventory (product_id, location_id, quantity)
-                    VALUES ($1, $2, $3)
-                `, [item.product_id, locationId, item.quantity_received]);
-            } else {
-                await client.query(`
-                    UPDATE inventory 
-                    SET quantity = quantity + $1, updated_at = NOW()
-                    WHERE product_id = $2 AND location_id = $3
-                `, [item.quantity_received, item.product_id, locationId]);
-            }
-
-            // Record transaction
-            await client.query(`
-                INSERT INTO inventory_transactions (
-                    product_id, location_id, transaction_type, 
-                    quantity, reference_type, reference_id, notes, created_by
-                ) VALUES ($1, $2, 'inbound', $3, 'inbound_order', $4, $5, $6)
-            `, [item.product_id, locationId, item.quantity_received, id, 'Received from inbound order', received_by]);
-        }
-
-        // Check if ALL items are fully received
-        const remainingCheck = await client.query(`
-            SELECT COUNT(*) as count FROM inbound_items 
-            WHERE inbound_order_id = $1 AND expected_quantity > COALESCE(received_quantity, 0)
-        `, [id]);
-
-        const remainingCount = parseInt(remainingCheck.rows[0].count);
-        console.log(`📊 Remaining items to receive: ${remainingCount}`);
-
-        // Update order status
-        const newStatus = remainingCount === 0 ? 'completed' : 'partial';
+        // Update order
         await client.query(`
             UPDATE inbound_orders 
-            SET status = $1, 
-                received_date = CASE WHEN $1 = 'completed' THEN NOW() ELSE received_date END,
+            SET 
+                supplier_id = $1,
+                expected_date = $2,
+                notes = $3,
+                status = $4,
+                updated_at = NOW()
+            WHERE id = $5
+        `, [supplier_id, expected_date, notes, status, id]);
+
+        // Update items if provided
+        if (items && items.length > 0) {
+            for (const item of items) {
+                await client.query(`
+                    UPDATE inbound_items 
+                    SET 
+                        expected_quantity = $1,
+                        received_quantity = $2
+                    WHERE inbound_order_id = $3 AND product_id = $4
+                `, [item.expected_quantity, item.received_quantity, id, item.product_id]);
+            }
+        }
+
+        await client.query('COMMIT');
+
+        // Get updated order
+        const result = await client.query(`
+            SELECT * FROM inbound_orders WHERE id = $1
+        `, [id]);
+
+        res.json({ 
+            success: true, 
+            message: 'Order updated successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error updating inbound order:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
+    }
+});
+
+// =====================================================
+// CANCEL INBOUND ORDER
+// =====================================================
+
+router.put('/:id/cancel', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { notes } = req.body;
+
+        await client.query('BEGIN');
+
+        const result = await client.query(`
+            UPDATE inbound_orders 
+            SET status = 'cancelled', 
+                notes = COALESCE($1, notes || 'Cancelled by admin'),
                 updated_at = NOW()
             WHERE id = $2
-        `, [newStatus, id]);
+            RETURNING *
+        `, [notes, id]);
+
+        if (result.rowCount === 0) {
+            throw new Error('Order not found');
+        }
 
         await client.query('COMMIT');
 
         res.json({ 
             success: true, 
-            message: `Items received successfully. Status: ${newStatus}`,
-            status: newStatus,
-            remaining_items: remainingCount
+            message: 'Order cancelled successfully',
+            data: result.rows[0]
         });
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error receiving inbound order:', error);
+        console.error('Error cancelling inbound order:', error);
         res.status(500).json({ error: error.message });
     } finally {
         client.release();
