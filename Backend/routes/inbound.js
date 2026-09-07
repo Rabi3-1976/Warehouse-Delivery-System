@@ -3,10 +3,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database');
 
-// =====================================================
-// GET ALL INBOUND ORDERS
-// =====================================================
-
+// GET all inbound orders
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -26,10 +23,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// =====================================================
-// GET SINGLE INBOUND ORDER
-// =====================================================
-
+// GET single inbound order
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -53,10 +47,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// =====================================================
-// CREATE INBOUND ORDER
-// =====================================================
-
+// CREATE inbound order
 router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -97,10 +88,7 @@ router.post('/', async (req, res) => {
     }
 });
 
-// =====================================================
-// RECEIVE INBOUND ORDER - FIXED
-// =====================================================
-
+// RECEIVE inbound order
 router.put('/:id/receive', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -113,7 +101,6 @@ router.put('/:id/receive', async (req, res) => {
 
         await client.query('BEGIN');
 
-        // Check if order exists and is pending
         const orderCheck = await client.query(
             'SELECT * FROM inbound_orders WHERE id = $1 AND status = $2',
             [id, 'pending']
@@ -125,7 +112,6 @@ router.put('/:id/receive', async (req, res) => {
         let allReceived = true;
 
         for (const item of items) {
-            // Update received quantity
             const updateResult = await client.query(`
                 UPDATE inbound_items 
                 SET received_quantity = received_quantity + $1
@@ -137,39 +123,8 @@ router.put('/:id/receive', async (req, res) => {
                 throw new Error(`Product ${item.product_id} not found in order`);
             }
 
-            // Get the product details
-            const productResult = await client.query(
-                'SELECT * FROM products WHERE id = $1',
-                [item.product_id]
-            );
-            const product = productResult.rows[0];
-
-            // Find a location for this product (or use a default one)
-            let locationId = item.location_id || 1; // Default location ID
-
-            // If location doesn't exist, create one
-            const locationCheck = await client.query(
-                'SELECT id FROM warehouse_locations WHERE id = $1',
-                [locationId]
-            );
-
-            if (locationCheck.rowCount === 0) {
-                // Use the first available location
-                const defaultLocation = await client.query(
-                    'SELECT id FROM warehouse_locations LIMIT 1'
-                );
-                if (defaultLocation.rowCount > 0) {
-                    locationId = defaultLocation.rows[0].id;
-                } else {
-                    // Create a default location if none exists
-                    const newLocation = await client.query(`
-                        INSERT INTO warehouse_locations (zone_id, aisle, rack, shelf, bin)
-                        VALUES (1, 'A', '1', '1', '1')
-                        RETURNING id
-                    `);
-                    locationId = newLocation.rows[0].id;
-                }
-            }
+            // Use default location ID 1
+            const locationId = item.location_id || 1;
 
             // Update inventory
             const inventoryCheck = await client.query(
@@ -190,7 +145,6 @@ router.put('/:id/receive', async (req, res) => {
                 `, [item.quantity_received, item.product_id, locationId]);
             }
 
-            // Record transaction
             await client.query(`
                 INSERT INTO inventory_transactions (
                     product_id, location_id, transaction_type, 
@@ -198,7 +152,6 @@ router.put('/:id/receive', async (req, res) => {
                 ) VALUES ($1, $2, 'inbound', $3, 'inbound_order', $4, $5, $6)
             `, [item.product_id, locationId, item.quantity_received, id, 'Received from inbound order', received_by]);
 
-            // Check if all items received
             const remainingCheck = await client.query(`
                 SELECT COUNT(*) as count FROM inbound_items 
                 WHERE inbound_order_id = $1 AND expected_quantity > received_quantity
@@ -209,7 +162,6 @@ router.put('/:id/receive', async (req, res) => {
             }
         }
 
-        // Update order status
         const newStatus = allReceived ? 'completed' : 'partial';
         await client.query(`
             UPDATE inbound_orders 
@@ -233,10 +185,7 @@ router.put('/:id/receive', async (req, res) => {
     }
 });
 
-// =====================================================
-// GET INBOUND ITEMS
-// =====================================================
-
+// GET inbound items
 router.get('/:id/items', async (req, res) => {
     try {
         const { id } = req.params;
@@ -258,10 +207,7 @@ router.get('/:id/items', async (req, res) => {
     }
 });
 
-// =====================================================
-// DELETE INBOUND ORDER
-// =====================================================
-
+// DELETE inbound order
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
