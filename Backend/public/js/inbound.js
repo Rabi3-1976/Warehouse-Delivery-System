@@ -364,7 +364,7 @@ async function loadInboundOrders() {
 }
 
 // =====================================================
-// SHOW CREATE INBOUND
+// SHOW CREATE INBOUND - FIXED
 // =====================================================
 
 async function showCreateInbound() {
@@ -432,21 +432,20 @@ async function showCreateInbound() {
             </div>
         `;
         document.body.appendChild(modal);
-        console.log('✅ Modal created successfully');
-
+        console.log('✅ Inbound modal created');
     } catch (error) {
-        console.error('❌ Error in showCreateInbound:', error);
+        console.error('❌ Error:', error);
         alert('Error loading form: ' + error.message);
     }
 }
 
 // =====================================================
-// ADD INBOUND ITEM - FIXED FOR MULTIPLE ITEMS
+// ADD INBOUND ITEM
 // =====================================================
 
 let itemCounter = 0;
 
-function addInboundItem() {
+async function addInboundItem() {
     console.log('➕ addInboundItem called');
     itemCounter++;
     const container = document.getElementById('inboundItems');
@@ -455,26 +454,25 @@ function addInboundItem() {
         return;
     }
     
-    // Get products for dropdown
-    apiRequest('/api/products').then(products => {
+    try {
+        const products = await apiRequest('/api/products');
         const div = document.createElement('div');
         div.className = 'inbound-item';
-        div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;';
+        div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;';
         div.innerHTML = `
-            <select class="form-control" style="flex:2; min-width:150px;" id="itemProduct_${itemCounter}" onchange="updateProductName(this, ${itemCounter})">
+            <select class="form-control" style="flex:2; min-width:150px;" id="itemProduct_${itemCounter}">
                 <option value="">Select Product</option>
                 ${products.map(p => `<option value="${p.id}">${p.id} - ${p.name}</option>`).join('')}
             </select>
             <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_${itemCounter}" min="1">
             <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_${itemCounter}" step="0.01">
-            <span id="itemName_${itemCounter}" style="flex:1; min-width:120px; font-size:12px; color:#666;"></span>
             <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
         `;
         container.appendChild(div);
-        console.log('✅ Item added, total items:', document.querySelectorAll('.inbound-item').length);
-    }).catch(err => {
-        console.error('Error loading products:', err);
-    });
+        console.log('✅ Item added, total:', document.querySelectorAll('.inbound-item').length);
+    } catch (error) {
+        console.error('Error:', error);
+    }
 }
 
 // Helper function to show product name when selected
