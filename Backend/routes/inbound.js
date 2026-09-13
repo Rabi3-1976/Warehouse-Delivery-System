@@ -122,7 +122,7 @@ router.post('/', async (req, res) => {
 });
 
 // =====================================================
-// RECEIVE INBOUND ORDER
+// RECEIVE INBOUND ORDER - FIXED
 // =====================================================
 router.put('/:id/receive', async (req, res) => {
     console.log('📦 Receive endpoint hit for order:', req.params.id);
@@ -152,7 +152,6 @@ router.put('/:id/receive', async (req, res) => {
         if (locationCheck.rowCount > 0) {
             locationId = locationCheck.rows[0].id;
         } else {
-            // Create default location
             const zoneCheck = await client.query('SELECT id FROM warehouse_zones LIMIT 1');
             let zoneId = 1;
             if (zoneCheck.rowCount > 0) {
@@ -217,10 +216,11 @@ router.put('/:id/receive', async (req, res) => {
         const remaining = parseInt(remainingCheck.rows[0].count);
         const newStatus = remaining === 0 ? 'completed' : 'partial';
 
+        // FIXED: Cast $1 explicitly to text to avoid type inconsistency
         await client.query(`
             UPDATE inbound_orders 
-            SET status = $1, 
-                received_date = CASE WHEN $1 = 'completed' THEN NOW() ELSE received_date END,
+            SET status = $1::text, 
+                received_date = CASE WHEN $1::text = 'completed' THEN NOW() ELSE received_date END,
                 updated_at = NOW()
             WHERE id = $2
         `, [newStatus, id]);
