@@ -125,6 +125,7 @@ function showPage(page) {
         case 'warehouse': loadWarehouse(content); break;
         case 'reports': loadReports(content); break;
         case 'settings': loadSettings(content); break;
+        case 'products': loadProducts(content); break;
         default: content.innerHTML = '<h2>Page not found</h2>';
     }
 }
