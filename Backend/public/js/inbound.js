@@ -1,5 +1,4 @@
 // public/js/inbound.js - COMPLETE WORKING VERSION
-
 console.log('✅ inbound.js loaded');
 
 // =====================================================
@@ -28,294 +27,6 @@ async function loadInbound(container) {
 }
 
 // =====================================================
-// RECEIVE INBOUND - FIXED
-// =====================================================
-
-async function receiveInbound(e, orderId) {
-    e.preventDefault();
-    console.log('📦 receiveInbound called:', orderId);
-    
-    try {
-        // Get the user ID from the hidden field
-        let receivedByInput = document.getElementById('receivedBy');
-        let received_by = 1; // Default to admin
-        
-        if (receivedByInput) {
-            received_by = parseInt(receivedByInput.value) || 1;
-        }
-        
-        console.log('👤 Received by user ID:', received_by);
-        
-        // Collect items with quantities
-        const itemElements = document.querySelectorAll('.receive-item');
-        const items = [];
-        
-        itemElements.forEach((el, idx) => {
-            const productId = el.querySelector('input[type="hidden"]')?.value;
-            const qtyInput = document.getElementById(`receiveQty_${idx}`);
-            const quantity_received = parseInt(qtyInput?.value || 0);
-            
-            if (productId && quantity_received > 0) {
-                items.push({ 
-                    product_id: parseInt(productId), 
-                    quantity_received: quantity_received,
-                    location_id: 12  // Your location ID
-                });
-            }
-        });
-
-        if (items.length === 0) {
-            alert('Please enter quantities to receive');
-            return;
-        }
-
-        console.log('📤 Receiving items:', items);
-        console.log('📤 Received by:', received_by);
-
-        // Make sure received_by is a number
-        const requestData = { 
-            items: items, 
-            received_by: received_by  // This must be a number, not a string
-        };
-        
-        console.log('📤 Request data:', requestData);
-
-        const result = await apiRequest(`/api/inbound/${orderId}/receive`, 'PUT', requestData);
-        
-        console.log('✅ Result:', result);
-
-        alert('✅ Items received successfully!');
-        document.getElementById('receiveModal')?.remove();
-        await loadInboundOrders();
-
-    } catch (error) {
-        console.error('❌ Error receiving:', error);
-        alert('❌ Error: ' + error.message);
-    }
-}
-
-// =====================================================
-// SHOW RECEIVE INBOUND - FIXED
-// =====================================================
-
-async function showReceiveInbound(orderId) {
-    console.log('📦 showReceiveInbound called:', orderId);
-    try {
-        const [order, items] = await Promise.all([
-            apiRequest(`/api/inbound/${orderId}`),
-            apiRequest(`/api/inbound/${orderId}/items`)
-        ]);
-
-        console.log('📋 Order:', order);
-        console.log('📦 Items:', items);
-
-        // Get user info from localStorage
-        let userId = 1;
-        let userName = 'Admin';
-        try {
-            const userData = localStorage.getItem('user');
-            if (userData) {
-                const user = JSON.parse(userData);
-                userId = user.id || 1;
-                userName = user.full_name || user.username || 'Admin';
-            }
-        } catch (e) {
-            console.log('Using default user (Admin)');
-        }
-
-        console.log(`👤 User: ${userName} (ID: ${userId})`);
-
-        const modal = document.createElement('div');
-        modal.className = 'modal active';
-        modal.id = 'receiveModal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Receive: ${order.order_number}</h2>
-                    <span class="modal-close" onclick="document.getElementById('receiveModal').remove()">&times;</span>
-                </div>
-                <form id="receiveInboundForm" onsubmit="receiveInbound(event, ${orderId})">
-                    <p><strong>Supplier:</strong> ${order.supplier_name}</p>
-                    <div class="form-group">
-                        <label>Received By</label>
-                        <input type="text" class="form-control" id="receivedByName" value="${userName}" readonly style="background-color:#f5f5f5;">
-                        <input type="hidden" id="receivedBy" value="${userId}">
-                        <small style="color:#888; display:block; margin-top:5px;">User ID: ${userId}</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Items</label>
-                        <div id="receiveItems">
-                            ${items && items.length > 0 ? items.map((item, idx) => `
-                                <div class="receive-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
-                                    <span style="flex:2;">${item.product_name || 'Product ' + item.product_id}</span>
-                                    <span style="flex:1;">Expected: ${item.expected_quantity}</span>
-                                    <span style="flex:1;">Received: ${item.received_quantity || 0}</span>
-                                    <input type="number" class="form-control" placeholder="Qty to receive" style="flex:1; min-width:100px;" 
-                                           id="receiveQty_${idx}" min="0" max="${item.expected_quantity - (item.received_quantity || 0)}">
-                                    <input type="hidden" value="${item.product_id}">
-                                </div>
-                            `).join('') : '<p>No items</p>'}
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success">Receive Items</button>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    } catch (error) {
-        console.error('Error showing receive:', error);
-        alert('Error loading receive: ' + error.message);
-    }
-}
-
-// =====================================================
-// EDIT INBOUND ORDER (Admin Only)
-// =====================================================
-
-async function editInbound(orderId) {
-    console.log('✏️ editInbound called:', orderId);
-    
-    // Check if user is admin
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.role !== 'admin') {
-        alert('⚠️ Only admin users can edit orders');
-        return;
-    }
-
-    try {
-        const [order, items, suppliers] = await Promise.all([
-            apiRequest(`/api/inbound/${orderId}`),
-            apiRequest(`/api/inbound/${orderId}/items`),
-            apiRequest('/api/suppliers')
-        ]);
-
-        const modal = document.createElement('div');
-        modal.className = 'modal active';
-        modal.id = 'editInboundModal';
-        modal.innerHTML = `
-            <div class="modal-content" style="max-width:700px;">
-                <div class="modal-header">
-                    <h2>Edit Inbound Order: ${order.order_number}</h2>
-                    <span class="modal-close" onclick="document.getElementById('editInboundModal').remove()">&times;</span>
-                </div>
-                <form id="editInboundForm" onsubmit="saveInbound(event, ${orderId})">
-                    <div class="form-group">
-                        <label>Supplier *</label>
-                        <select class="form-control" id="editSupplier" required>
-                            ${suppliers.map(s => `
-                                <option value="${s.id}" ${s.id === order.supplier_id ? 'selected' : ''}>${s.name}</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Expected Date</label>
-                        <input type="date" class="form-control" id="editExpectedDate" value="${order.expected_date ? order.expected_date.split('T')[0] : ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Notes</label>
-                        <textarea class="form-control" id="editNotes" rows="2">${order.notes || ''}</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Status</label>
-                        <select class="form-control" id="editStatus">
-                            <option value="pending" ${order.status === 'pending' ? 'selected' : ''}>Pending</option>
-                            <option value="partial" ${order.status === 'partial' ? 'selected' : ''}>Partial</option>
-                            <option value="completed" ${order.status === 'completed' ? 'selected' : ''}>Completed</option>
-                            <option value="cancelled" ${order.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Items</label>
-                        <div id="editItems">
-                            ${items && items.length > 0 ? items.map((item, idx) => `
-                                <div class="edit-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
-                                    <span style="flex:2;">${item.product_name || 'Product ' + item.product_id}</span>
-                                    <input type="number" class="form-control" placeholder="Expected Qty" style="flex:1; min-width:80px;" 
-                                           id="editExpectedQty_${idx}" value="${item.expected_quantity}">
-                                    <input type="number" class="form-control" placeholder="Received Qty" style="flex:1; min-width:80px;" 
-                                           id="editReceivedQty_${idx}" value="${item.received_quantity || 0}">
-                                    <input type="hidden" value="${item.product_id}">
-                                </div>
-                            `).join('') : '<p>No items</p>'}
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success">Save Changes</button>
-                    <button type="button" class="btn btn-danger" onclick="cancelInbound(${orderId})">Cancel Order</button>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    } catch (error) {
-        alert('Error loading order: ' + error.message);
-    }
-}
-
-// =====================================================
-// SAVE INBOUND ORDER
-// =====================================================
-
-async function saveInbound(e, orderId) {
-    e.preventDefault();
-    console.log('💾 saveInbound called:', orderId);
-
-    try {
-        const supplier_id = document.getElementById('editSupplier').value;
-        const expected_date = document.getElementById('editExpectedDate').value;
-        const notes = document.getElementById('editNotes').value;
-        const status = document.getElementById('editStatus').value;
-
-        // Collect items
-        const itemElements = document.querySelectorAll('.edit-item');
-        const items = [];
-        itemElements.forEach((el, idx) => {
-            const productId = el.querySelector('input[type="hidden"]').value;
-            const expectedQty = document.getElementById(`editExpectedQty_${idx}`).value;
-            const receivedQty = document.getElementById(`editReceivedQty_${idx}`).value;
-            items.push({
-                product_id: parseInt(productId),
-                expected_quantity: parseInt(expectedQty) || 0,
-                received_quantity: parseInt(receivedQty) || 0
-            });
-        });
-
-        const data = {
-            supplier_id: parseInt(supplier_id),
-            expected_date: expected_date || null,
-            notes: notes || '',
-            status: status,
-            items: items
-        };
-
-        const result = await apiRequest(`/api/inbound/${orderId}`, 'PUT', data);
-        alert('✅ Order updated successfully!');
-        document.getElementById('editInboundModal')?.remove();
-        await loadInboundOrders();
-    } catch (error) {
-        alert('❌ Error: ' + error.message);
-    }
-}
-
-// =====================================================
-// CANCEL INBOUND ORDER
-// =====================================================
-
-async function cancelInbound(orderId) {
-    if (!confirm('⚠️ Are you sure you want to cancel this order?')) return;
-    
-    try {
-        const result = await apiRequest(`/api/inbound/${orderId}/cancel`, 'PUT', { 
-            status: 'cancelled',
-            notes: 'Order cancelled by admin'
-        });
-        alert('✅ Order cancelled');
-        document.getElementById('editInboundModal')?.remove();
-        await loadInboundOrders();
-    } catch (error) {
-        alert('❌ Error: ' + error.message);
-    }
-}
-
-// =====================================================
 // LOAD INBOUND ORDERS
 // =====================================================
 
@@ -323,25 +34,15 @@ async function loadInboundOrders() {
     console.log('📋 loadInboundOrders called');
     try {
         const orders = await apiRequest('/api/inbound');
-        console.log('📦 Orders received:', orders);
         const tbody = document.getElementById('inboundTableBody');
-        // In loadInboundOrders function, update the actions column:
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const isAdmin = user.role === 'admin';
-
-// In the table row:
-<td>
-    ${o.status === 'pending' || o.status === 'partial' ? 
-        `<button class="btn btn-success btn-sm" onclick="showReceiveInbound(${o.id})">Receive</button>` : ''}
-    <button class="btn btn-info btn-sm" onclick="viewInbound(${o.id})">View</button>
-    ${isAdmin ? 
-        `<button class="btn btn-warning btn-sm" onclick="editInbound(${o.id})">Edit</button>` : ''}
-</td>
         
         if (!orders || orders.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5">No inbound orders</td></tr>';
             return;
         }
+
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const isAdmin = user.role === 'admin';
 
         tbody.innerHTML = orders.map(o => `
             <tr>
@@ -356,19 +57,19 @@ async function loadInboundOrders() {
                 </td>
             </tr>
         `).join('');
-        console.log('✅ Inbound orders displayed');
     } catch (error) {
-        console.error('❌ Error loading inbound orders:', error);
+        console.error('❌ Error:', error);
         document.getElementById('inboundTableBody').innerHTML = `<tr><td colspan="5">Error: ${error.message}</td></tr>`;
     }
 }
 
 // =====================================================
-// SHOW CREATE INBOUND - FIXED
+// SHOW CREATE INBOUND - THE KEY FUNCTION
 // =====================================================
 
 async function showCreateInbound() {
     console.log('➕ showCreateInbound called');
+    
     try {
         const [suppliers, products] = await Promise.all([
             apiRequest('/api/suppliers'),
@@ -415,13 +116,13 @@ async function showCreateInbound() {
                     <div class="form-group">
                         <label>Items</label>
                         <div id="inboundItems">
-                            <div class="inbound-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-                                <select class="form-control" style="flex:2; min-width:150px;" id="itemProduct_0">
+                            <div class="inbound-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+                                <select class="form-control product-select" style="flex:2; min-width:150px;">
                                     <option value="">Select Product</option>
                                     ${products.map(p => `<option value="${p.id}">${p.id} - ${p.name}</option>`).join('')}
                                 </select>
-                                <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_0" min="1">
-                                <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_0" step="0.01">
+                                <input type="number" class="form-control qty-input" placeholder="Qty" style="flex:1; min-width:80px;" min="1">
+                                <input type="number" class="form-control cost-input" placeholder="Unit Cost" style="flex:1; min-width:100px;" step="0.01">
                                 <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
                             </div>
                         </div>
@@ -443,51 +144,33 @@ async function showCreateInbound() {
 // ADD INBOUND ITEM
 // =====================================================
 
-let itemCounter = 0;
-
 async function addInboundItem() {
     console.log('➕ addInboundItem called');
-    itemCounter++;
     const container = document.getElementById('inboundItems');
-    if (!container) {
-        console.error('❌ inboundItems container not found!');
-        return;
-    }
+    if (!container) return;
     
     try {
         const products = await apiRequest('/api/products');
         const div = document.createElement('div');
         div.className = 'inbound-item';
-        div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;';
+        div.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;';
         div.innerHTML = `
-            <select class="form-control" style="flex:2; min-width:150px;" id="itemProduct_${itemCounter}">
+            <select class="form-control product-select" style="flex:2; min-width:150px;">
                 <option value="">Select Product</option>
                 ${products.map(p => `<option value="${p.id}">${p.id} - ${p.name}</option>`).join('')}
             </select>
-            <input type="number" class="form-control" placeholder="Qty" style="flex:1; min-width:80px;" id="itemQty_${itemCounter}" min="1">
-            <input type="number" class="form-control" placeholder="Unit Cost" style="flex:1; min-width:100px;" id="itemCost_${itemCounter}" step="0.01">
+            <input type="number" class="form-control qty-input" placeholder="Qty" style="flex:1; min-width:80px;" min="1">
+            <input type="number" class="form-control cost-input" placeholder="Unit Cost" style="flex:1; min-width:100px;" step="0.01">
             <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.inbound-item').remove()">✕</button>
         `;
         container.appendChild(div);
-        console.log('✅ Item added, total:', document.querySelectorAll('.inbound-item').length);
     } catch (error) {
-        console.error('Error:', error);
-    }
-}
-
-// Helper function to show product name when selected
-function updateProductName(select, counter) {
-    const nameSpan = document.getElementById(`itemName_${counter}`);
-    if (select.value) {
-        const selectedOption = select.options[select.selectedIndex];
-        nameSpan.textContent = selectedOption.text;
-    } else {
-        nameSpan.textContent = '';
+        console.error('❌ Error:', error);
     }
 }
 
 // =====================================================
-// CREATE INBOUND ORDER - FIXED FOR MULTIPLE ITEMS
+// CREATE INBOUND ORDER
 // =====================================================
 
 async function createInbound(e) {
@@ -504,27 +187,17 @@ async function createInbound(e) {
             return;
         }
 
-        // Collect ALL items
         const itemElements = document.querySelectorAll('.inbound-item');
-        console.log('📦 Found items:', itemElements.length);
-        
         const items = [];
-        let hasValidItem = false;
         
-        itemElements.forEach((el, index) => {
-            // Find the select or input for product
-            const productSelect = el.querySelector(`#itemProduct_${index}`) || 
-                                  el.querySelector('select');
-            const qtyInput = el.querySelector(`#itemQty_${index}`) || 
-                            el.querySelector('input[placeholder="Qty"]');
-            const costInput = el.querySelector(`#itemCost_${index}`) || 
-                            el.querySelector('input[placeholder="Unit Cost"]');
+        itemElements.forEach(el => {
+            const productSelect = el.querySelector('.product-select');
+            const qtyInput = el.querySelector('.qty-input');
+            const costInput = el.querySelector('.cost-input');
             
             const product_id = productSelect ? productSelect.value : '';
             const quantity = qtyInput ? parseInt(qtyInput.value) : 0;
             const unit_cost = costInput ? parseFloat(costInput.value) : 0;
-
-            console.log(`📦 Item ${index}:`, { product_id, quantity, unit_cost });
 
             if (product_id && quantity > 0) {
                 items.push({ 
@@ -532,18 +205,13 @@ async function createInbound(e) {
                     quantity: quantity, 
                     unit_cost: unit_cost || 0 
                 });
-                hasValidItem = true;
-            } else if (product_id) {
-                console.warn(`⚠️ Item ${index} has product but no quantity`);
             }
         });
 
-        if (!hasValidItem || items.length === 0) {
-            alert('Please add at least one valid item with product and quantity');
+        if (items.length === 0) {
+            alert('Please add at least one valid item');
             return;
         }
-
-        console.log('📤 Sending items:', items);
 
         const data = {
             supplier_id: parseInt(supplier_id),
@@ -553,38 +221,41 @@ async function createInbound(e) {
             created_by: 1
         };
 
+        console.log('📤 Sending:', data);
         const result = await apiRequest('/api/inbound', 'POST', data);
         console.log('✅ Result:', result);
 
-        alert(`✅ Inbound order created successfully with ${items.length} items!`);
+        alert(`✅ Inbound order created with ${items.length} item(s)!`);
         document.getElementById('inboundModal')?.remove();
         await loadInboundOrders();
 
     } catch (error) {
-        console.error('❌ Error creating inbound:', error);
+        console.error('❌ Error:', error);
         alert('❌ Error: ' + error.message);
     }
 }
 
 // =====================================================
-// VIEW INBOUND ORDER
+// VIEW INBOUND
 // =====================================================
 
 async function viewInbound(orderId) {
-    console.log('👁️ viewInbound called:', orderId);
     try {
-        const order = await apiRequest(`/api/inbound/${orderId}`);
-        const items = await apiRequest(`/api/inbound/${orderId}/items`);
+        const [order, items] = await Promise.all([
+            apiRequest(`/api/inbound/${orderId}`),
+            apiRequest(`/api/inbound/${orderId}/items`)
+        ]);
         
-        let message = `📋 Order ${order.order_number}\n`;
+        let message = `📋 Order: ${order.order_number}\n`;
         message += `Supplier: ${order.supplier_name}\n`;
-        message += `Status: ${order.status}\n`;
-        message += `Items:\n`;
+        message += `Status: ${order.status}\n\nItems:\n`;
+        
         if (items && items.length > 0) {
             items.forEach(item => {
-                message += `  - ${item.product_name}: ${item.expected_quantity} expected, ${item.received_quantity || 0} received\n`;
+                message += `• ${item.product_name || 'Product ' + item.product_id}: ${item.expected_quantity} expected, ${item.received_quantity || 0} received\n`;
             });
         }
+        
         alert(message);
     } catch (error) {
         alert('Error: ' + error.message);
@@ -592,19 +263,123 @@ async function viewInbound(orderId) {
 }
 
 // =====================================================
-// EXPOSE GLOBALLY
+// SHOW RECEIVE INBOUND
+// =====================================================
+
+async function showReceiveInbound(orderId) {
+    console.log('📦 showReceiveInbound called:', orderId);
+    try {
+        const [order, items] = await Promise.all([
+            apiRequest(`/api/inbound/${orderId}`),
+            apiRequest(`/api/inbound/${orderId}/items`)
+        ]);
+
+        let userId = 1;
+        let userName = 'Admin';
+        try {
+            const userData = localStorage.getItem('user');
+            if (userData) {
+                const user = JSON.parse(userData);
+                userId = user.id || 1;
+                userName = user.full_name || user.username || 'Admin';
+            }
+        } catch (e) {}
+
+        const modal = document.createElement('div');
+        modal.className = 'modal active';
+        modal.id = 'receiveModal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Receive: ${order.order_number}</h2>
+                    <span class="modal-close" onclick="document.getElementById('receiveModal').remove()">&times;</span>
+                </div>
+                <form id="receiveInboundForm" onsubmit="receiveInbound(event, ${orderId})">
+                    <p><strong>Supplier:</strong> ${order.supplier_name}</p>
+                    <div class="form-group">
+                        <label>Received By</label>
+                        <input type="text" class="form-control" value="${userName}" readonly style="background-color:#f5f5f5;">
+                        <input type="hidden" id="receivedBy" value="${userId}">
+                    </div>
+                    <div class="form-group">
+                        <label>Items</label>
+                        <div id="receiveItems">
+                            ${items && items.length > 0 ? items.map((item, idx) => `
+                                <div class="receive-item" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+                                    <span style="flex:2;">${item.product_name || 'Product ' + item.product_id}</span>
+                                    <span style="flex:1;">Expected: ${item.expected_quantity}</span>
+                                    <span style="flex:1;">Received: ${item.received_quantity || 0}</span>
+                                    <input type="number" class="form-control receive-qty" placeholder="Qty" style="flex:1; min-width:100px;" 
+                                           min="0" max="${item.expected_quantity - (item.received_quantity || 0)}"
+                                           data-product-id="${item.product_id}">
+                                </div>
+                            `).join('') : '<p>No items</p>'}
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success">Receive Items</button>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// =====================================================
+// RECEIVE INBOUND
+// =====================================================
+
+async function receiveInbound(e, orderId) {
+    e.preventDefault();
+    try {
+        const received_by = parseInt(document.getElementById('receivedBy').value) || 1;
+        const items = [];
+        
+        document.querySelectorAll('.receive-item').forEach(el => {
+            const qtyInput = el.querySelector('.receive-qty');
+            const productId = qtyInput.getAttribute('data-product-id');
+            const quantity_received = parseInt(qtyInput.value || 0);
+            
+            if (quantity_received > 0) {
+                items.push({ 
+                    product_id: parseInt(productId), 
+                    quantity_received: quantity_received,
+                    location_id: 12
+                });
+            }
+        });
+
+        if (items.length === 0) {
+            alert('Please enter quantities to receive');
+            return;
+        }
+
+        const result = await apiRequest(`/api/inbound/${orderId}/receive`, 'PUT', { 
+            items, 
+            received_by 
+        });
+
+        alert('✅ Items received successfully!');
+        document.getElementById('receiveModal')?.remove();
+        await loadInboundOrders();
+    } catch (error) {
+        alert('❌ Error: ' + error.message);
+    }
+}
+
+// =====================================================
+// EXPOSE GLOBALLY - CRITICAL!
 // =====================================================
 
 window.loadInbound = loadInbound;
+window.loadInboundOrders = loadInboundOrders;
 window.showCreateInbound = showCreateInbound;
-window.createInbound = createInbound;
 window.addInboundItem = addInboundItem;
+window.createInbound = createInbound;
+window.viewInbound = viewInbound;
 window.showReceiveInbound = showReceiveInbound;
 window.receiveInbound = receiveInbound;
-window.viewInbound = viewInbound;
-window.loadInboundOrders = loadInboundOrders;
-window.editInbound = editInbound;
-window.saveInbound = saveInbound;
-window.cancelInbound = cancelInbound;
 
 console.log('✅ inbound.js fully loaded and functions exposed');
