@@ -37,6 +37,117 @@ app.use('/api/warehouse', warehouseRoutes);
 app.use('/api/reports', reportRoutes);
 
 // =====================================================
+// PRODUCT ROUTES
+// =====================================================
+
+// GET all products
+app.get('/api/products', async (req, res) => {
+    try {
+        const { search } = req.query;
+        let query = `
+            SELECT id, name, sku, barcode, description, unit, min_stock, max_stock, created_at
+            FROM products 
+            WHERE 1=1
+        `;
+        const params = [];
+        
+        if (search) {
+            query += ` AND (name ILIKE $1 OR sku ILIKE $1)`;
+            params.push(`%${search}%`);
+        }
+        
+        query += ` ORDER BY name`;
+        
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET single product
+app.get('/api/products/:id', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM products WHERE id = $1', [req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error fetching product:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST create product
+app.post('/api/products', async (req, res) => {
+    try {
+        const { name, sku, barcode, description, unit, min_stock, max_stock } = req.body;
+        
+        if (!name || !sku) {
+            return res.status(400).json({ error: 'Name and SKU are required' });
+        }
+
+        const result = await pool.query(`
+            INSERT INTO products (name, sku, barcode, description, unit, min_stock, max_stock, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            RETURNING *
+        `, [name, sku, barcode, description, unit || 'pcs', min_stock || 0, max_stock || 9999]);
+
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error('Error creating product:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT update product
+app.put('/api/products/:id', async (req, res) => {
+    try {
+        const { name, sku, barcode, description, unit, min_stock, max_stock } = req.body;
+        
+        const result = await pool.query(`
+            UPDATE products 
+            SET 
+                name = COALESCE($1, name),
+                sku = COALESCE($2, sku),
+                barcode = COALESCE($3, barcode),
+                description = COALESCE($4, description),
+                unit = COALESCE($5, unit),
+                min_stock = COALESCE($6, min_stock),
+                max_stock = COALESCE($7, max_stock),
+                updated_at = NOW()
+            WHERE id = $8
+            RETURNING *
+        `, [name, sku, barcode, description, unit, min_stock, max_stock, req.params.id]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error updating product:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE product
+app.delete('/api/products/:id', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING id', [req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json({ message: 'Product deleted' });
+    } catch (error) {
+        console.error('Error deleting product:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// =====================================================
 // AUTHENTICATION
 // =====================================================
 
